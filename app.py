@@ -61,13 +61,25 @@ def create_vertical_video(image_url, script_text):
    # 5. Накладаємо картинку і всі субтитри на фон
     final_video = CompositeVideoClip([bg_clip, img_clip.with_position("center")] + text_clips)
     
-    # --- НОВИЙ БЛОК ДЛЯ ПАРНИХ РОЗМІРІВ ---
+    # Примусово задаємо загальний FPS для всієї композиції
+    final_video = final_video.with_fps(24)
+    
+    # Гарантуємо цілі парні числа для розмірів (int)
     w, h = final_video.size
-    final_video = final_video.cropped(x1=0, y1=0, x2=w - (w % 2), y2=h - (h % 2))
-    # --------------------------------------
+    final_video = final_video.cropped(x1=0, y1=0, x2=int(w - (w % 2)), y2=int(h - (h % 2)))
     
     output_path = "ready_for_reels.mp4"
-    final_video.write_videofile(output_path, fps=24, codec="libx264", audio=False, preset="ultrafast", logger=None)
+    
+    # Зберігаємо з явним форматом пікселів (yuv420p), без якого Linux часто блокує рендер
+    final_video.write_videofile(
+        output_path, 
+        fps=24, 
+        codec="libx264", 
+        audio=False, 
+        preset="ultrafast", 
+        ffmpeg_params=["-pix_fmt", "yuv420p"], 
+        logger=None
+    )
     return output_path
 
 # Кнопка запуску
