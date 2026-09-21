@@ -21,18 +21,31 @@ def get_full_image_url(thumb_url):
 
 # Функція тепер приймає і посилання на картинку, і згенерований текст
 def create_vertical_video(image_url, script_text):
-    # 1. Завантажуємо картинку
-    img_data = requests.get(image_url).content
-    temp_img_path = "temp_news_img.jpg"
-    with open(temp_img_path, 'wb') as handler:
-        handler.write(img_data)
-        
-    # 2. Створюємо базове відео (наприклад, 15 секунд)
+    # 1. Створюємо базове відео (одразу задаємо FPS для стабільності)
     video_duration = 15
-    bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration)
-    img_clip = ImageClip(temp_img_path).with_duration(video_duration).resized(width=1080)
+    bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration).with_fps(24)
     
-    # 3. Розбиваємо текст на частини та прибираємо зайві символи
+    clips_to_composite = [bg_clip]
+    
+    # 2. Безпечно завантажуємо картинку (імітуємо звичайний браузер, щоб сайт не блокував)
+    if image_url:
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            img_response = requests.get(image_url, headers=headers, timeout=10)
+            
+            # Перевіряємо, чи це дійсно картинка, а не сторінка з помилкою
+            if img_response.status_code == 200 and 'image' in img_response.headers.get('Content-Type', ''):
+                temp_img_path = "temp_news_img.jpg"
+                with open(temp_img_path, 'wb') as handler:
+                    handler.write(img_response.content)
+                
+                img_clip = ImageClip(temp_img_path).with_duration(video_duration).resized(width=1080)
+                clips_to_composite.append(img_clip.with_position("center"))
+        except Exception as e:
+            print(f"Помилка завантаження картинки: {e}")
+            # Якщо картинка не завантажилась, відео згенерується просто на чорному фоні
+            
+    # 3. Розбиваємо текст на частини
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '')
     phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
     
@@ -45,38 +58,32 @@ def create_vertical_video(image_url, script_text):
     
     for phrase in phrases:
         txt = TextClip(
-            font="font.ttf",  # Arial Black - жирний і дуже читабельний
+            font="font.ttf",
             text=phrase,
-            font_size=65,                        # Великий текст
+            font_size=65,
             color='white',
             stroke_color='black',
-            stroke_width=3,                      # Товста обводка для контрасту
-            method='caption',                    # Дозволяє тексту переноситися на нові рядки
-            size=(850, None)                     # Вузький блок, щоб не обрізалися краї
+            stroke_width=3,
+            method='caption',
+            size=(850, None)
         ).with_position(('center', 1350)).with_start(current_time).with_duration(chunk_duration)
         
         text_clips.append(txt)
         current_time += chunk_duration
         
-   # 5. Накладаємо картинку і всі субтитри на фон
-    final_video = CompositeVideoClip([bg_clip, img_clip.with_position("center")] + text_clips)
+    # 4. Збираємо всі шари разом
+    clips_to_composite.extend(text_clips)
+    final_video = CompositeVideoClip(clips_to_composite).with_fps(24)
     
-    # Примусово задаємо загальний FPS для всієї композиції
-    final_video = final_video.with_fps(24)
-    
-    # Гарантуємо цілі парні числа для розмірів (int)
-    w, h = final_video.size
-    final_video = final_video.cropped(x1=0, y1=0, x2=int(w - (w % 2)), y2=int(h - (h % 2)))
-    
+    # 5. Зберігаємо (з обмеженням потоків для слабких серверів)
     output_path = "ready_for_reels.mp4"
-    
-    # Зберігаємо з явним форматом пікселів (yuv420p), без якого Linux часто блокує рендер
     final_video.write_videofile(
         output_path, 
         fps=24, 
         codec="libx264", 
         audio=False, 
         preset="ultrafast", 
+        threads=1,            # Найважливіший параметр: рендер в 1 потік, щоб сервер не "падав"
         ffmpeg_params=["-pix_fmt", "yuv420p"], 
         logger=None
     )
