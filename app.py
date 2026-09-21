@@ -115,7 +115,7 @@ if st.button("🚀 Згенерувати контент"):
                     for sproba in range(3):
                         try:
                             response = chat.send_message(prompt)
-                            script_text = response.text
+                            script = response.text
                             break
                         except Exception as e:
                         # Тепер ми ловимо і 503 (перевантаження), і 429 (ліміт запитів)
@@ -126,7 +126,7 @@ if st.button("🚀 Згенерувати контент"):
                                 raise e
                     
                     st.write("🎬 Монтуємо відео...")
-                    video_path = create_vertical_video(original_image_url, script_text)
+                    video_path = create_vertical_video(original_image_url, script)
                     
                     status.update(label="Готово!", state="complete", expanded=False)
             
