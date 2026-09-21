@@ -58,8 +58,13 @@ def create_vertical_video(image_url, script_text):
         text_clips.append(txt)
         current_time += chunk_duration
         
-    # 5. Накладаємо картинку і всі субтитри на фон
+   # 5. Накладаємо картинку і всі субтитри на фон
     final_video = CompositeVideoClip([bg_clip, img_clip.with_position("center")] + text_clips)
+    
+    # --- НОВИЙ БЛОК ДЛЯ ПАРНИХ РОЗМІРІВ ---
+    w, h = final_video.size
+    final_video = final_video.cropped(x1=0, y1=0, x2=w - (w % 2), y2=h - (h % 2))
+    # --------------------------------------
     
     output_path = "ready_for_reels.mp4"
     final_video.write_videofile(output_path, fps=24, codec="libx264", audio=False, preset="ultrafast", logger=None)
@@ -121,7 +126,7 @@ if st.button("🚀 Згенерувати контент"):
                                 raise e
                     
                     st.write("🎬 Монтуємо відео...")
-                    video_path = create_vertical_video(original_image_url, script)
+                    video_path = create_vertical_video(original_image_url, script_text)
                     
                     status.update(label="Готово!", state="complete", expanded=False)
             
