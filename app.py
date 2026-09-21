@@ -128,23 +128,25 @@ if st.button("🚀 Згенерувати контент"):
                     ЖОДНИХ коментарів, жодних позначок часу, жодних слів "Хук", "Суть", "Текст на екрані", "Кадр". Без зірочок (*) і без форматування. Тільки сам текст, який побачить глядач.
                     Новина: {clean_text}"""
 
-                    chat = client.chats.create(model='gemini-3.8-flash')
+                    # Використовуємо твою робочу версію моделі
+                    chat = client.chats.create(model='gemini-3.6-flash')
                     script = "Не вдалося згенерувати сценарій через перевантаження серверів."
 
                     for sproba in range(3):
                         try:
                             response = chat.send_message(prompt)
-                            script = response.text
+                            # ВАЖЛИВО: зберігаємо відповідь саме у змінну script!
+                            script = response.text 
                             break
                         except Exception as e:
-                        # Тепер ми ловимо і 503 (перевантаження), і 429 (ліміт запитів)
                             if "503" in str(e) or "429" in str(e):
-                                st.warning(f"Сервери Google зайняті або перевищено ліміт запитів. Спроба {sproba + 1} з 3... Чекаємо 15 секунд.")
-                                time.sleep(15) # Збільшуємо паузу до 15 секунд, щоб дати API "відпочити"
+                                st.warning(f"Сервери Google зайняті. Спроба {sproba + 1} з 3... Чекаємо 15 секунд.")
+                                time.sleep(15)
                             else:
                                 raise e
                     
                     st.write("🎬 Монтуємо відео...")
+                    # Передаємо наш успішний script у відео
                     video_path = create_vertical_video(original_image_url, script)
                     
                     status.update(label="Готово!", state="complete", expanded=False)
