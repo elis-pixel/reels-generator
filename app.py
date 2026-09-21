@@ -9,7 +9,7 @@ from moviepy import ImageClip, CompositeVideoClip, ColorClip, TextClip
 
 # Налаштування сторінки
 st.set_page_config(page_title="Reels Генератор", page_icon="📱")
-st.title("🤖 Reels для ДНЕМ ЗА ДНЕМ")
+st.title("🤖 Reels для ДЕНЬ ЗА ДНЕМ")
 
 # Зберігаємо ключ у безпечному полі
 api_key = st.text_input("Введіть ключ Gemini API (починається з AQ...):", type="password")
