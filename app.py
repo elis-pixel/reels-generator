@@ -62,7 +62,7 @@ def create_vertical_video(image_url, script_text):
     final_video = CompositeVideoClip([bg_clip, img_clip.with_position("center")] + text_clips)
     
     output_path = "ready_for_reels.mp4"
-    final_video.write_videofile(output_path, fps=24, codec="libx264", logger=None)
+    final_video.write_videofile(output_path, fps=24, codec="libx264", audio=False, preset="ultrafast", logger=None)
     return output_path
 
 # Кнопка запуску
