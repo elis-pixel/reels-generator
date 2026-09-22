@@ -183,46 +183,43 @@ if st.button("🚀 Згенерувати контент"):
                 
                 st.write("✍️ Генеруємо сценарій...")
                     prompt = f"""Ти креативний контент-мейкер. Напиши текст, який буде з'являтися прямо НА ЕКРАНІ у відео TikTok/Reels. Озвучки не буде, відео читатимуть очима!
-                    ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3-4 короткі фрази (кожна з нового рядка, через Enter). 
-                    ЖОДНИХ коментарів, жодних позначок часу, жодних слів "Хук", "Суть", "Текст на екрані", "Кадр". Без зірочок (*) і без форматування. Тільки сам текст, який побачить глядач.
-                    Новина: {clean_text}"""
+ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3-4 короткі фрази (кожна з нового рядка, через Enter). 
+ЖОДНИХ коментарів, жодних позначок часу, жодних слів "Хук", "Суть", "Текст на екрані", "Кадр". Без зірочок (*) і без форматування. Тільки сам текст, який побачить глядач.
+Новина: {clean_text}"""
 
-                    # Використовуємо твою робочу версію моделі
-                    chat = client.chats.create(model='gemini-3.6-flash')
-                    script = "Не вдалося згенерувати сценарій через перевантаження серверів."
+                chat = client.chats.create(model='gemini-3.6-flash')
+                script = "Не вдалося згенерувати сценарій через перевантаження серверів."
 
-                    for sproba in range(3):
-                        try:
-                            response = chat.send_message(prompt)
-                            # ВАЖЛИВО: зберігаємо відповідь саме у змінну script!
-                            script = response.text 
-                            break
-                        except Exception as e:
-                            if "503" in str(e) or "429" in str(e):
-                                st.warning(f"Сервери Google зайняті. Спроба {sproba + 1} з 3... Чекаємо 15 секунд.")
-                                time.sleep(15)
-                            else:
-                                raise e
-                    
-                    st.write("🎬 Монтуємо відео...")
-                    # Передаємо наш успішний script у відео
-                    video_path = create_vertical_video(original_image_url, script)
-                    
-                    status.update(label="Готово!", state="complete", expanded=False)
-            
-            # Виведення результатів на екран
-            st.success(f"Новина: {latest_news.title}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Відеофон (9:16)")
-                st.video(video_path)
-                with open(video_path, "rb") as file:
-                    st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_bg.mp4", mime="video/mp4")
-                    
-            with col2:
-                st.subheader("Сценарій / Субтитри")
-                st.text_area("Скопіюй цей текст:", script, height=300)
+                for sproba in range(3):
+                    try:
+                        response = chat.send_message(prompt)
+                        script = response.text 
+                        break
+                    except Exception as e:
+                        if "503" in str(e) or "429" in str(e):
+                            st.warning(f"Сервери Google зайняті. Спроба {sproba + 1} з 3... Чекаємо 15 секунд.")
+                            time.sleep(15)
+                        else:
+                            raise e
                 
-        except Exception as e:
-            st.error(f"Виникла помилка: {e}")
+                st.write("🎬 Монтуємо відео...")
+                video_path = create_vertical_video(original_image_url, script)
+                
+                status.update(label="Готово!", state="complete", expanded=False)
+        
+        # Виведення результатів на екран
+        st.success(f"Новина: {latest_news.title}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Відеофон (9:16)")
+            st.video(video_path)
+            with open(video_path, "rb") as file:
+                st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_bg.mp4", mime="video/mp4")
+                
+        with col2:
+            st.subheader("Сценарій / Субтитри")
+            st.text_area("Скопіюй цей текст:", script, height=300)
+            
+    except Exception as e:
+        st.error(f"Виникла помилка: {e}")
