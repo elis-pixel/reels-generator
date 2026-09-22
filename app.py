@@ -103,7 +103,6 @@ def create_vertical_video(image_url, script_text):
             color='white',
             stroke_color='black',
             stroke_width=2.5,
-            align='center',       # Вирівнюємо по центру
             method='label'        # Гарантує, що наші переноси спрацюють ідеально
         ).with_position(('center', 1250)).with_start(current_time).with_duration(chunk_duration)
         
