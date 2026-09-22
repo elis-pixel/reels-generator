@@ -2,6 +2,8 @@ import streamlit as st
 import feedparser
 import re
 import time
+import textwrap
+from PIL import Image, ImageFilter, ImageEnhance
 import requests
 from bs4 import BeautifulSoup
 from google import genai
@@ -21,31 +23,65 @@ def get_full_image_url(thumb_url):
 
 # Функція тепер приймає і посилання на картинку, і згенерований текст
 def create_vertical_video(image_url, script_text):
-    # 1. Створюємо базове відео (одразу задаємо FPS для стабільності)
     video_duration = 15
-    bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration).with_fps(24)
+    clips_to_composite = []
     
-    clips_to_composite = [bg_clip]
-    
-    # 2. Безпечно завантажуємо картинку (імітуємо звичайний браузер, щоб сайт не блокував)
+    # 1. Завантажуємо картинку
     if image_url:
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             img_response = requests.get(image_url, headers=headers, timeout=10)
             
-            # Перевіряємо, чи це дійсно картинка, а не сторінка з помилкою
             if img_response.status_code == 200 and 'image' in img_response.headers.get('Content-Type', ''):
                 temp_img_path = "temp_news_img.jpg"
                 with open(temp_img_path, 'wb') as handler:
                     handler.write(img_response.content)
                 
-                img_clip = ImageClip(temp_img_path).with_duration(video_duration).resized(width=1080)
-                clips_to_composite.append(img_clip.with_position("center"))
+                # --- СТВОРЮЄМО КІНЕМАТОГРАФІЧНИЙ ФОН ---
+                # Відкриваємо картинку і розтягуємо на 1080x1920
+                img = Image.open(temp_img_path).convert("RGB")
+                img_ratio = img.width / img.height
+                target_ratio = 1080 / 1920
+                
+                # Масштабуємо та обрізаємо зайве, щоб заповнити весь екран
+                if img_ratio > target_ratio:
+                    new_h = 1920
+                    new_w = int(new_h * img_ratio)
+                    img_bg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    left = (new_w - 1080) / 2
+                    img_bg = img_bg.crop((left, 0, left + 1080, 1920))
+                else:
+                    new_w = 1080
+                    new_h = int(new_w / img_ratio)
+                    img_bg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    top = (new_h - 1920) / 2
+                    img_bg = img_bg.crop((0, top, 1080, top + 1920))
+                
+                # Сильно розмиваємо і затемнюємо на 70% (залишаємо 30% яскравості)
+                img_bg = img_bg.filter(ImageFilter.GaussianBlur(radius=30))
+                enhancer = ImageEnhance.Brightness(img_bg)
+                img_bg = enhancer.enhance(0.3) 
+                
+                bg_path = "temp_bg_blurred.jpg"
+                img_bg.save(bg_path)
+                
+                # Додаємо фон та оригінальну картинку
+                bg_clip = ImageClip(bg_path).with_duration(video_duration).with_fps(24)
+                img_clip = ImageClip(temp_img_path).with_duration(video_duration).resized(width=900)
+                
+                clips_to_composite.append(bg_clip)
+                # Підняли картинку трохи вгору, щоб внизу було місце для тексту
+                clips_to_composite.append(img_clip.with_position(("center", 350)))
+                
         except Exception as e:
             print(f"Помилка завантаження картинки: {e}")
-            # Якщо картинка не завантажилась, відео згенерується просто на чорному фоні
             
-    # 3. Розбиваємо текст на частини
+    # Якщо картинка не завантажилася, робимо чорний фон
+    if not clips_to_composite:
+        bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration).with_fps(24)
+        clips_to_composite.append(bg_clip)
+
+    # 2. РОБОТА З ТЕКСТОМ (Розумний перенос)
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '')
     phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
     
@@ -57,25 +93,30 @@ def create_vertical_video(image_url, script_text):
     current_time = 0
     
     for phrase in phrases:
+        # Розумно розбиваємо рядок по словах (максимум 22 символи на рядок)
+        wrapped_text = textwrap.fill(phrase, width=22)
+        
         txt = TextClip(
             font="font.ttf",
-            text=phrase,
-            font_size=65,
+            text=wrapped_text,
+            font_size=60,         # Оптимальний розмір для читання
             color='white',
             stroke_color='black',
-            stroke_width=3,
-            method='caption',
-            size=(850, None)
-        ).with_position(('center', 1350)).with_start(current_time).with_duration(chunk_duration)
+            stroke_width=2.5,
+            align='center',       # Вирівнюємо по центру
+            method='label'        # Гарантує, що наші переноси спрацюють ідеально
+        ).with_position(('center', 1250)).with_start(current_time).with_duration(chunk_duration)
         
         text_clips.append(txt)
         current_time += chunk_duration
         
-    # 4. Збираємо всі шари разом
     clips_to_composite.extend(text_clips)
     final_video = CompositeVideoClip(clips_to_composite).with_fps(24)
     
-    # 5. Зберігаємо (з обмеженням потоків для слабких серверів)
+    # 3. Гарантуємо парні розміри і зберігаємо
+    w, h = final_video.size
+    final_video = final_video.cropped(x1=0, y1=0, x2=int(w - (w % 2)), y2=int(h - (h % 2)))
+    
     output_path = "ready_for_reels.mp4"
     final_video.write_videofile(
         output_path, 
@@ -83,7 +124,7 @@ def create_vertical_video(image_url, script_text):
         codec="libx264", 
         audio=False, 
         preset="ultrafast", 
-        threads=1,            # Найважливіший параметр: рендер в 1 потік, щоб сервер не "падав"
+        threads=1, 
         ffmpeg_params=["-pix_fmt", "yuv420p"], 
         logger=None
     )
