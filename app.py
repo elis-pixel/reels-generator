@@ -96,14 +96,18 @@ def create_vertical_video(image_url, script_text):
         # Розумно розбиваємо рядок по словах (максимум 22 символи на рядок)
         wrapped_text = textwrap.fill(phrase, width=22)
         
+        # МАГІЧНИЙ ТРЮК: Додаємо новий рядок і пробіл знизу ("\n "), 
+        # щоб сервер гарантовано не відрізав нижню частину тексту
+        safe_text = wrapped_text + "\n "
+        
         txt = TextClip(
             font="font.ttf",
-            text=wrapped_text,
-            font_size=60,         # Оптимальний розмір для читання
+            text=safe_text,       # Використовуємо наш текст із "подушкою безпеки"
+            font_size=60,         
             color='white',
             stroke_color='black',
             stroke_width=2.5,
-            method='label'        # Гарантує, що наші переноси спрацюють ідеально
+            method='label'        
         ).with_position(('center', 1250)).with_start(current_time).with_duration(chunk_duration)
         
         text_clips.append(txt)
