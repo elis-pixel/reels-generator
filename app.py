@@ -133,23 +133,41 @@ def create_vertical_video(image_url, script_text):
     )
     return output_path
 
+# --- НОВИЙ БЛОК: ВИБІР НОВИНИ ---
+st.markdown("### 📰 Вибір новини")
+feed = feedparser.parse("https://denzadnem.com.ua/feed/")
+
+if not feed.entries:
+    st.error("Не вдалося завантажити новини. Перевірте з'єднання.")
+    selected_news = None
+else:
+    # Беремо останні 15 новин
+    recent_news = feed.entries[:15]
+    # Створюємо словник (Заголовок -> сама новина)
+    news_options = {entry.title: entry for entry in recent_news}
+    
+    # Випадаючий список у Streamlit
+    selected_title = st.selectbox("Оберіть новину для створення відео:", list(news_options.keys()))
+    selected_news = news_options[selected_title]
+
 # Кнопка запуску
 if st.button("🚀 Згенерувати контент"):
     if not api_key:
         st.warning("Будь ласка, введіть API ключ для роботи штучного інтелекту.")
+    elif not selected_news:
+        st.error("Будь ласка, оберіть новину зі списку.")
     else:
         try:
             client = genai.Client(api_key=api_key)
             
             with st.status("Обробка...", expanded=True) as status:
-                st.write("🔍 Шукаємо свіжо-випечену новину...")
-                feed = feedparser.parse("https://denzadnem.com.ua/feed/")
+                st.write(f"🔍 Аналізуємо обрану новину...")
                 
-                if not feed.entries:
-                    st.error("Не вдалося знайти новини.(")
-                else:
-                    latest_news = feed.entries[0]
-                    clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
+                # Замість першої новини беремо ту, яку ти обрала у списку!
+                latest_news = selected_news 
+                clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
+                
+                # --- Далі старий код  ---
                     
                     # Пошук картинки
                     image_url = None
