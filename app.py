@@ -135,7 +135,7 @@ def create_vertical_video(image_url, script_text):
 
 # --- НОВИЙ БЛОК: ВИБІР НОВИНИ ---
 st.markdown("### 📰 Вибір новини")
-feed = feedparser.parse("https://denzadnem.com.ua/feed/")
+feed = feedparser.parse("https://denzadnem.com.ua/feed/gn")
 
 if not feed.entries:
     st.error("Не вдалося завантажити новини. Перевірте з'єднання.")
