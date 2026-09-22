@@ -207,20 +207,20 @@ if st.button("🚀 Згенерувати контент"):
                 video_path = create_vertical_video(original_image_url, script)
                 
                 status.update(label="Готово!", state="complete", expanded=False)
-        
-        # Виведення результатів на екран
-        st.success(f"Новина: {latest_news.title}")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Відеофон (9:16)")
-            st.video(video_path)
-            with open(video_path, "rb") as file:
-                st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_bg.mp4", mime="video/mp4")
-                
-        with col2:
-            st.subheader("Сценарій / Субтитри")
-            st.text_area("Скопіюй цей текст:", script, height=300)
             
+            # Виведення результатів на екран (теперь внутри блока try)
+            st.success(f"Новина: {latest_news.title}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Відеофон (9:16)")
+                st.video(video_path)
+                with open(video_path, "rb") as file:
+                    st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_bg.mp4", mime="video/mp4")
+                    
+            with col2:
+                st.subheader("Сценарій / Субтитри")
+                st.text_area("Скопіюй цей текст:", script, height=300)
+                
         except Exception as e:
             st.error(f"Виникла помилка: {e}")
