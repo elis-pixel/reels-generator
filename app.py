@@ -163,28 +163,25 @@ if st.button("🚀 Згенерувати контент"):
             with st.status("Обробка...", expanded=True) as status:
                 st.write(f"🔍 Аналізуємо обрану новину...")
                 
-                # Замість першої новини беремо ту, яку ти обрала у списку!
                 latest_news = selected_news 
                 clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
                 
-                # --- Далі старий код  ---
-                    
-                    # Пошук картинки
-                    image_url = None
-                    if 'enclosures' in latest_news:
-                        for enc in latest_news.enclosures:
-                            if 'image' in enc.type:
-                                image_url = enc.href
-                                break
-                    if not image_url and 'summary' in latest_news:
-                        soup = BeautifulSoup(latest_news.summary, 'html.parser')
-                        img_tag = soup.find('img')
-                        if img_tag and img_tag.get('src'):
-                            image_url = img_tag['src']
-                            
-                    original_image_url = get_full_image_url(image_url)
-                    
-                    st.write("✍️ Генеруємо сценарій...")
+                # Пошук картинки
+                image_url = None
+                if 'enclosures' in latest_news:
+                    for enc in latest_news.enclosures:
+                        if 'image' in enc.type:
+                            image_url = enc.href
+                            break
+                if not image_url and 'summary' in latest_news:
+                    soup = BeautifulSoup(latest_news.summary, 'html.parser')
+                    img_tag = soup.find('img')
+                    if img_tag and img_tag.get('src'):
+                        image_url = img_tag['src']
+                        
+                original_image_url = get_full_image_url(image_url)
+                
+                st.write("✍️ Генеруємо сценарій...")
                     prompt = f"""Ти креативний контент-мейкер. Напиши текст, який буде з'являтися прямо НА ЕКРАНІ у відео TikTok/Reels. Озвучки не буде, відео читатимуть очима!
                     ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3-4 короткі фрази (кожна з нового рядка, через Enter). 
                     ЖОДНИХ коментарів, жодних позначок часу, жодних слів "Хук", "Суть", "Текст на екрані", "Кадр". Без зірочок (*) і без форматування. Тільки сам текст, який побачить глядач.
