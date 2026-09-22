@@ -191,6 +191,7 @@ if st.button("🚀 Згенерувати контент"):
                 chat = client.chats.create(model='gemini-3.6-flash')
                 script = "Не вдалося згенерувати сценарій через перевантаження серверів."
 
+                # 1. Генеруємо текст для відео
                 for sproba in range(3):
                     try:
                         response = chat.send_message(prompt)
@@ -202,13 +203,29 @@ if st.button("🚀 Згенерувати контент"):
                             time.sleep(15)
                         else:
                             raise e
+                            
+                # 2. Генеруємо опис та хештеги для соцмереж
+                st.write("📝 Створюємо опис та хештеги...")
+                prompt_desc = f"""Напиши короткий, інтригуючий текст для опису під відео в TikTok/Reels про цю новину. 
+Обов'язково додай 5-7 релевантних хештегів (завжди включай #новини #деньзаднем #хмельниччина). 
+Пиши простою мовою, без зірочок і складного форматування.
+Новина: {clean_text}"""
+
+                social_desc = f"{latest_news.title}\n\nДеталі на сайті!\n#новини #деньзаднем #хмельниччина"
+                for sproba in range(3):
+                    try:
+                        resp_desc = chat.send_message(prompt_desc)
+                        social_desc = resp_desc.text
+                        break
+                    except:
+                        time.sleep(5)
                 
                 st.write("🎬 Монтуємо відео...")
                 video_path = create_vertical_video(original_image_url, script)
                 
                 status.update(label="Готово!", state="complete", expanded=False)
             
-            # Виведення результатів на екран (теперь внутри блока try)
+            # Виведення результатів на екран
             st.success(f"Новина: {latest_news.title}")
             
             col1, col2 = st.columns(2)
@@ -219,8 +236,11 @@ if st.button("🚀 Згенерувати контент"):
                     st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_bg.mp4", mime="video/mp4")
                     
             with col2:
-                st.subheader("Сценарій / Субтитри")
-                st.text_area("Скопіюй цей текст:", script, height=300)
+                st.subheader("Текст на відео")
+                st.text_area("Сценарій (субтитри):", script, height=150)
+                
+                st.subheader("Опис для соцмереж")
+                st.text_area("Скопіюй для публікації (можна редагувати):", social_desc, height=200)
                 
         except Exception as e:
             st.error(f"Виникла помилка: {e}")
