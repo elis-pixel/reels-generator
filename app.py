@@ -211,7 +211,7 @@ if st.button("🚀 Згенерувати контент"):
                 # 1. Запит до ШІ для тексту відео
                 try:
                     response = client.models.generate_content(
-                        model='gemini-1.5-flash',
+                        model='gemini-3.6-flash',
                         contents=prompt
                     )
                     if response.text:
@@ -225,7 +225,7 @@ if st.button("🚀 Згенерувати контент"):
                 # 2. Запит до ШІ для опису та хештегів
                 try:
                     resp_desc = client.models.generate_content(
-                        model='gemini-1.5-flash',
+                        model='gemini-3.6-flash',
                         contents=prompt_desc
                     )
                     if resp_desc.text:
