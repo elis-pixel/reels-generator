@@ -21,67 +21,75 @@ def get_full_image_url(thumb_url):
         return re.sub(r'-\d+x\d+(\.\w+)$', r'\1', thumb_url)
     return None
 
-# Функція тепер приймає і посилання на картинку, і згенерований текст
-def create_vertical_video(image_url, script_text):
+def create_vertical_video(image_urls, script_text):
     video_duration = 15
     clips_to_composite = []
     
-    # 1. Завантажуємо картинку
-    if image_url:
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            img_response = requests.get(image_url, headers=headers, timeout=10)
+    # Перевіряємо, чи нам передали список
+    if isinstance(image_urls, str):
+        image_urls = [image_urls]
+        
+    valid_img_paths = []
+    
+    # 1. Завантажуємо всі картинки (максимум 3)
+    if image_urls:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        for i, url in enumerate(image_urls[:3]):
+            try:
+                img_response = requests.get(url, headers=headers, timeout=5)
+                if img_response.status_code == 200:
+                    path = f"temp_news_img_{i}.jpg"
+                    with open(path, 'wb') as handler:
+                        handler.write(img_response.content)
+                    valid_img_paths.append(path)
+            except Exception as e:
+                print(f"Помилка картинки: {e}")
+                
+    # 2. Робимо фон і слайди
+    if valid_img_paths:
+        # Фон беремо з ПЕРШОЇ картинки і розмиваємо його на все відео
+        img = Image.open(valid_img_paths[0]).convert("RGB")
+        img_ratio = img.width / img.height
+        target_ratio = 1080 / 1920
+        
+        if img_ratio > target_ratio:
+            new_h = 1920
+            new_w = int(new_h * img_ratio)
+            img_bg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            left = (new_w - 1080) / 2
+            img_bg = img_bg.crop((left, 0, left + 1080, 1920))
+        else:
+            new_w = 1080
+            new_h = int(new_w / img_ratio)
+            img_bg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            top = (new_h - 1920) / 2
+            img_bg = img_bg.crop((0, top, 1080, top + 1920))
+        
+        img_bg = img_bg.filter(ImageFilter.GaussianBlur(radius=30))
+        enhancer = ImageEnhance.Brightness(img_bg)
+        img_bg = enhancer.enhance(0.3) 
+        bg_path = "temp_bg_blurred.jpg"
+        img_bg.save(bg_path)
+        
+        bg_clip = ImageClip(bg_path).with_duration(video_duration).with_fps(24)
+        clips_to_composite.append(bg_clip)
+        
+        # --- МАГІЯ СЛАЙД-ШОУ ---
+        num_images = len(valid_img_paths)
+        time_per_slide = video_duration / num_images
+        
+        for i, img_path in enumerate(valid_img_paths):
+            slide_clip = ImageClip(img_path).resized(width=900)
+            # Кожна картинка стартує у свій час і триває певну частку відео
+            slide_clip = slide_clip.with_start(i * time_per_slide).with_duration(time_per_slide).with_position(("center", 350))
+            clips_to_composite.append(slide_clip)
             
-            if img_response.status_code == 200 and 'image' in img_response.headers.get('Content-Type', ''):
-                temp_img_path = "temp_news_img.jpg"
-                with open(temp_img_path, 'wb') as handler:
-                    handler.write(img_response.content)
-                
-                # --- СТВОРЮЄМО КІНЕМАТОГРАФІЧНИЙ ФОН ---
-                # Відкриваємо картинку і розтягуємо на 1080x1920
-                img = Image.open(temp_img_path).convert("RGB")
-                img_ratio = img.width / img.height
-                target_ratio = 1080 / 1920
-                
-                # Масштабуємо та обрізаємо зайве, щоб заповнити весь екран
-                if img_ratio > target_ratio:
-                    new_h = 1920
-                    new_w = int(new_h * img_ratio)
-                    img_bg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    left = (new_w - 1080) / 2
-                    img_bg = img_bg.crop((left, 0, left + 1080, 1920))
-                else:
-                    new_w = 1080
-                    new_h = int(new_w / img_ratio)
-                    img_bg = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    top = (new_h - 1920) / 2
-                    img_bg = img_bg.crop((0, top, 1080, top + 1920))
-                
-                # Сильно розмиваємо і затемнюємо на 70% (залишаємо 30% яскравості)
-                img_bg = img_bg.filter(ImageFilter.GaussianBlur(radius=30))
-                enhancer = ImageEnhance.Brightness(img_bg)
-                img_bg = enhancer.enhance(0.3) 
-                
-                bg_path = "temp_bg_blurred.jpg"
-                img_bg.save(bg_path)
-                
-                # Додаємо фон та оригінальну картинку
-                bg_clip = ImageClip(bg_path).with_duration(video_duration).with_fps(24)
-                img_clip = ImageClip(temp_img_path).with_duration(video_duration).resized(width=900)
-                
-                clips_to_composite.append(bg_clip)
-                # Підняли картинку трохи вгору, щоб внизу було місце для тексту
-                clips_to_composite.append(img_clip.with_position(("center", 350)))
-                
-        except Exception as e:
-            print(f"Помилка завантаження картинки: {e}")
-            
-    # Якщо картинка не завантажилася, робимо чорний фон
-    if not clips_to_composite:
+    else:
+        # Якщо картинок взагалі нуль
         bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration).with_fps(24)
         clips_to_composite.append(bg_clip)
 
-    # 2. РОБОТА З ТЕКСТОМ (Розумний перенос)
+    # 3. Додаємо текст (код без змін)
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '')
     phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
     
@@ -93,16 +101,12 @@ def create_vertical_video(image_url, script_text):
     current_time = 0
     
     for phrase in phrases:
-        # Розумно розбиваємо рядок по словах (максимум 22 символи на рядок)
         wrapped_text = textwrap.fill(phrase, width=22)
-        
-        # МАГІЧНИЙ ТРЮК: Додаємо новий рядок і пробіл знизу ("\n "), 
-        # щоб сервер гарантовано не відрізав нижню частину тексту
         safe_text = wrapped_text + "\n "
         
         txt = TextClip(
             font="font.ttf",
-            text=safe_text,       # Використовуємо наш текст із "подушкою безпеки"
+            text=safe_text,
             font_size=60,         
             color='white',
             stroke_color='black',
@@ -116,7 +120,6 @@ def create_vertical_video(image_url, script_text):
     clips_to_composite.extend(text_clips)
     final_video = CompositeVideoClip(clips_to_composite).with_fps(24)
     
-    # 3. Гарантуємо парні розміри і зберігаємо
     w, h = final_video.size
     final_video = final_video.cropped(x1=0, y1=0, x2=int(w - (w % 2)), y2=int(h - (h % 2)))
     
