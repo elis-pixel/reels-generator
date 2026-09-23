@@ -89,7 +89,7 @@ def create_vertical_video(image_urls, script_text):
         bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration).with_fps(24)
         clips_to_composite.append(bg_clip)
 
-    # 3. Додаємо текст (код без змін)
+    # 3. Додаємо текст
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '')
     phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
     
@@ -146,10 +146,8 @@ if not feed.entries:
 else:
     # Беремо останні 15 новин
     recent_news = feed.entries[:15]
-    # Створюємо словник (Заголовок -> сама новина)
     news_options = {entry.title: entry for entry in recent_news}
     
-    # Випадаючий список у Streamlit
     selected_title = st.selectbox("Оберіть новину для створення відео:", list(news_options.keys()))
     selected_news = news_options[selected_title]
 
@@ -190,7 +188,6 @@ if st.button("🚀 Згенерувати контент"):
                         if img_tag.get('src') and img_tag['src'] not in found_images:
                             found_images.append(img_tag['src'])
                             
-                # Перетворюємо відносні посилання на повні
                 original_image_urls = [get_full_image_url(url) for url in found_images]
                 
                 st.write("✍️ Генеруємо сценарій...")
@@ -208,30 +205,44 @@ if st.button("🚀 Згенерувати контент"):
                 script = "Не вдалося згенерувати сценарій. Перевірте API ключ або ліміти."
                 social_desc = f"{latest_news.title}\n\nДеталі на сайті!\n#новини #деньзаднем #хмельниччина"
 
-                # 1. Запит до ШІ для тексту відео
-                try:
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=prompt
-                    )
-                    if response.text:
-                        script = response.text 
-                except Exception as e:
-                    st.warning(f"Помилка ШІ (сценарій): {e}")
-                    
-                st.info("⏳ Робимо паузу 5 секунд, щоб не перевантажити сервер...")
-                time.sleep(5)
+                # 1. Запит до ШІ для тексту відео (з 3 спробами і захистом)
+                for sproba in range(3):
+                    try:
+                        response = client.models.generate_content(
+                            model='gemini-3.6-flash',
+                            contents=prompt
+                        )
+                        if response.text:
+                            script = response.text 
+                            break 
+                    except Exception as e:
+                        if "503" in str(e) or "429" in str(e):
+                            st.warning(f"Сервер зайнятий. Спроба {sproba + 1} з 3... Чекаємо 30 секунд.")
+                            time.sleep(30) 
+                        else:
+                            st.warning(f"Помилка ШІ (сценарій): {e}")
+                            break
                             
-                # 2. Запит до ШІ для опису та хештегів
-                try:
-                    resp_desc = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=prompt_desc
-                    )
-                    if resp_desc.text:
-                        social_desc = resp_desc.text
-                except Exception as e:
-                    st.warning(f"Помилка ШІ (опис): {e}")
+                st.info("⏳ Робимо стандартну паузу 10 секунд перед описом...")
+                time.sleep(10)
+                            
+                # 2. Запит до ШІ для опису та хештегів (з 3 спробами і захистом)
+                for sproba in range(3):
+                    try:
+                        resp_desc = client.models.generate_content(
+                            model='gemini-3.6-flash',
+                            contents=prompt_desc
+                        )
+                        if resp_desc.text:
+                            social_desc = resp_desc.text
+                            break
+                    except Exception as e:
+                        if "503" in str(e) or "429" in str(e):
+                            st.warning(f"Сервер зайнятий. Спроба {sproba + 1} з 3... Чекаємо 30 секунд.")
+                            time.sleep(30)
+                        else:
+                            st.warning(f"Помилка ШІ (опис): {e}")
+                            break
                 
                 st.write("🎬 Монтуємо відео...")
                 video_path = create_vertical_video(original_image_urls, script)
