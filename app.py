@@ -136,7 +136,7 @@ def create_vertical_video(image_urls, script_text):
     )
     return output_path
 
-# --- НОВИЙ БЛОК: ВИБІР НОВИНИ ---
+# --- БЛОК: ВИБІР НОВИНИ ---
 st.markdown("### 📰 Вибір новини")
 feed = feedparser.parse("https://denzadnem.com.ua/feed/gn")
 
@@ -200,41 +200,38 @@ if st.button("🚀 Згенерувати контент"):
 ЖОДНИХ коментарів, жодних позначок часу, жодних слів "Хук", "Суть", "Текст на екрані", "Кадр". Без зірочок (*) і без форматування. Тільки сам текст, який побачить глядач.
 Новина: {clean_text}"""
 
-                chat = client.chats.create(model='gemini-3.6-flash')
-                script = "Не вдалося згенерувати сценарій через перевантаження серверів."
-
-                # 1. Генеруємо текст для відео
-                for sproba in range(3):
-                    try:
-                        response = chat.send_message(prompt)
-                        script = response.text 
-                        break
-                    except Exception as e:
-                        if "503" in str(e) or "429" in str(e):
-                            st.warning(f"Сервери Google зайняті. Спроба {sproba + 1} з 3... Чекаємо 15 секунд.")
-                            time.sleep(15)
-                        else:
-                            raise e
-                            
-                # --- ДОДАЄМО ПАУЗУ ЩОБ НЕ ПЕРЕВАНТАЖУВАТИ СЕРВЕР ---
-                st.info("⏳ Робимо паузу 10 секунд перед наступним завданням для ШІ...")
-                time.sleep(10)
-                            
-                # 2. Генеруємо опис та хештеги для соцмереж
-                st.write("📝 Створюємо опис та хештеги...")
                 prompt_desc = f"""Напиши короткий, інтригуючий текст для опису під відео в TikTok/Reels про цю новину. 
 Обов'язково додай 5-7 релевантних хештегів (завжди включай #новини #деньзаднем #хмельниччина). 
 Пиши простою мовою, без зірочок і складного форматування.
 Новина: {clean_text}"""
 
+                script = "Не вдалося згенерувати сценарій. Перевірте API ключ або ліміти."
                 social_desc = f"{latest_news.title}\n\nДеталі на сайті!\n#новини #деньзаднем #хмельниччина"
-                for sproba in range(3):
-                    try:
-                        resp_desc = chat.send_message(prompt_desc)
+
+                # 1. Запит до ШІ для тексту відео
+                try:
+                    response = client.models.generate_content(
+                        model='gemini-1.5-flash',
+                        contents=prompt
+                    )
+                    if response.text:
+                        script = response.text 
+                except Exception as e:
+                    st.warning(f"Помилка ШІ (сценарій): {e}")
+                    
+                st.info("⏳ Робимо паузу 5 секунд, щоб не перевантажити сервер...")
+                time.sleep(5)
+                            
+                # 2. Запит до ШІ для опису та хештегів
+                try:
+                    resp_desc = client.models.generate_content(
+                        model='gemini-1.5-flash',
+                        contents=prompt_desc
+                    )
+                    if resp_desc.text:
                         social_desc = resp_desc.text
-                        break
-                    except:
-                        time.sleep(5)
+                except Exception as e:
+                    st.warning(f"Помилка ШІ (опис): {e}")
                 
                 st.write("🎬 Монтуємо відео...")
                 video_path = create_vertical_video(original_image_urls, script)
@@ -259,4 +256,4 @@ if st.button("🚀 Згенерувати контент"):
                 st.text_area("Скопіюй для публікації (можна редагувати):", social_desc, height=200)
                 
         except Exception as e:
-            st.error(f"Виникла помилка: {e}")
+            st.error(f"Виникла загальна помилка: {e}")
