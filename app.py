@@ -166,13 +166,26 @@ if st.button("🚀 Згенерувати контент"):
                 latest_news = selected_news 
                 clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
                 
-                # Пошук картинки
+                # Пошук картинки (Покращений радар)
                 image_url = None
                 if 'enclosures' in latest_news:
                     for enc in latest_news.enclosures:
                         if 'image' in enc.type:
                             image_url = enc.href
                             break
+                            
+                # Шукаємо у спеціальному блоці медіа
+                if not image_url and 'media_content' in latest_news:
+                    image_url = latest_news.media_content[0]['url']
+                    
+                # Шукаємо в повному тексті статті
+                if not image_url and 'content' in latest_news:
+                    soup = BeautifulSoup(latest_news.content[0].value, 'html.parser')
+                    img_tag = soup.find('img')
+                    if img_tag and img_tag.get('src'):
+                        image_url = img_tag['src']
+                        
+                # Шукаємо в короткому описі (твій старий варіант)
                 if not image_url and 'summary' in latest_news:
                     soup = BeautifulSoup(latest_news.summary, 'html.parser')
                     img_tag = soup.find('img')
