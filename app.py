@@ -233,7 +233,7 @@ if st.button("🚀 Згенерувати контент"):
                         time.sleep(5)
                 
                 st.write("🎬 Монтуємо відео...")
-                video_path = create_vertical_video(original_image_url, script)
+                video_path = create_vertical_video(original_image_urls, script)
                 
                 status.update(label="Готово!", state="complete", expanded=False)
             
