@@ -169,33 +169,29 @@ if st.button("🚀 Згенерувати контент"):
                 latest_news = selected_news 
                 clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
                 
-                # Пошук картинки (Покращений радар)
-                image_url = None
+                # Пошук картинки (Збираємо список для слайд-шоу)
+                found_images = []
+                
                 if 'enclosures' in latest_news:
                     for enc in latest_news.enclosures:
                         if 'image' in enc.type:
-                            image_url = enc.href
-                            break
+                            found_images.append(enc.href)
                             
-                # Шукаємо у спеціальному блоці медіа
-                if not image_url and 'media_content' in latest_news:
-                    image_url = latest_news.media_content[0]['url']
-                    
-                # Шукаємо в повному тексті статті
-                if not image_url and 'content' in latest_news:
-                    soup = BeautifulSoup(latest_news.content[0].value, 'html.parser')
-                    img_tag = soup.find('img')
-                    if img_tag and img_tag.get('src'):
-                        image_url = img_tag['src']
-                        
-                # Шукаємо в короткому описі (твій старий варіант)
-                if not image_url and 'summary' in latest_news:
-                    soup = BeautifulSoup(latest_news.summary, 'html.parser')
-                    img_tag = soup.find('img')
-                    if img_tag and img_tag.get('src'):
-                        image_url = img_tag['src']
-                        
-                original_image_url = get_full_image_url(image_url)
+                if 'media_content' in latest_news:
+                    for media in latest_news.media_content:
+                        if 'url' in media:
+                            found_images.append(media['url'])
+                            
+                # Шукаємо всі теги <img> у тексті статті
+                if 'content' in latest_news or 'summary' in latest_news:
+                    html_source = latest_news.content[0].value if 'content' in latest_news else latest_news.summary
+                    soup = BeautifulSoup(html_source, 'html.parser')
+                    for img_tag in soup.find_all('img'):
+                        if img_tag.get('src') and img_tag['src'] not in found_images:
+                            found_images.append(img_tag['src'])
+                            
+                # Перетворюємо відносні посилання на повні
+                original_image_urls = [get_full_image_url(url) for url in found_images]
                 
                 st.write("✍️ Генеруємо сценарій...")
                 
