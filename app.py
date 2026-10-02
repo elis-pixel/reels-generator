@@ -9,11 +9,11 @@ from bs4 import BeautifulSoup
 from google import genai
 from moviepy import ImageClip, CompositeVideoClip, ColorClip, TextClip
 
-# Налаштування сторінки
+# Налаштування
 st.set_page_config(page_title="Reels Генератор", page_icon="📱")
 st.title("🤖 Reels для ДЕНЬ ЗА ДНЕМ")
 
-# Зберігаємо ключ у безпечному полі
+#  ключ
 api_key = st.text_input("Введіть ключ Gemini API (починається з AQ...):", type="password")
 
 def get_full_image_url(thumb_url):
@@ -74,7 +74,7 @@ def create_vertical_video(image_urls, script_text):
         bg_clip = ImageClip(bg_path).with_duration(video_duration).with_fps(24)
         clips_to_composite.append(bg_clip)
         
-        # --- МАГІЯ СЛАЙД-ШОУ ---
+        # СЛАЙД-ШОУ
         num_images = len(valid_img_paths)
         time_per_slide = video_duration / num_images
         
@@ -89,7 +89,7 @@ def create_vertical_video(image_urls, script_text):
         bg_clip = ColorClip(size=(1080, 1920), color=(15, 15, 15)).with_duration(video_duration).with_fps(24)
         clips_to_composite.append(bg_clip)
 
-    # 3. Додаємо текст
+    # 3. текст
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '')
     phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
     
@@ -136,7 +136,7 @@ def create_vertical_video(image_urls, script_text):
     )
     return output_path
 
-# --- БЛОК: ВИБІР НОВИНИ ---
+#ВИБІР НОВИНИ 
 st.markdown("### 📰 Вибір новини")
 feed = feedparser.parse("https://denzadnem.com.ua/feed/gn")
 
@@ -167,7 +167,7 @@ if st.button("🚀 Згенерувати контент"):
                 latest_news = selected_news 
                 clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
                 
-                # Пошук картинки (Збираємо список для слайд-шоу)
+                # Пошук картинки (список для слайд-шоу)
                 found_images = []
                 
                 if 'enclosures' in latest_news:
@@ -180,7 +180,7 @@ if st.button("🚀 Згенерувати контент"):
                         if 'url' in media:
                             found_images.append(media['url'])
                             
-                # Шукаємо всі теги <img> у тексті статті
+                #  всі теги <img> у тексті статті
                 if 'content' in latest_news or 'summary' in latest_news:
                     html_source = latest_news.content[0].value if 'content' in latest_news else latest_news.summary
                     soup = BeautifulSoup(html_source, 'html.parser')
