@@ -209,7 +209,7 @@ if st.button("🚀 Згенерувати контент"):
                 for sproba in range(3):
                     try:
                         response = client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-1.5-flash-8b',
                             contents=prompt
                         )
                         if response.text:
@@ -230,7 +230,7 @@ if st.button("🚀 Згенерувати контент"):
                 for sproba in range(3):
                     try:
                         resp_desc = client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-1.5-flash-8b',
                             contents=prompt_desc
                         )
                         if resp_desc.text:
