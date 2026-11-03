@@ -3,6 +3,7 @@ import feedparser
 import re
 import time
 import os
+import textwrap
 import requests
 import numpy as np
 from bs4 import BeautifulSoup
@@ -42,69 +43,102 @@ def get_best_font(size, bold=True):
                 continue
     return ImageFont.load_default()
 
-def create_paper_texture():
-    base = Image.new("RGBA", (WIDTH, HEIGHT), (18, 20, 26, 255))
-    draw = ImageDraw.Draw(base)
-    grid = 36
-    for x in range(0, WIDTH, grid):
-        for y in range(0, HEIGHT, grid):
-            r = 1.5 if (x + y) % (grid * 2) == 0 else 1.0
-            draw.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, 14))
+def create_editorial_bg():
+    canvas = Image.new("RGBA", (WIDTH, HEIGHT), (22, 24, 30, 255))
+    draw = ImageDraw.Draw(canvas)
+    
+    # Діагональні смуги
+    for x in range(-WIDTH, WIDTH * 2, 48):
+        draw.line([(x, 0), (x + HEIGHT, HEIGHT)], fill=(255, 255, 255, 6), width=2)
+        
+    # Крапки halftone
+    for x in range(30, WIDTH, 36):
+        for y in range(30, HEIGHT, 36):
+            draw.ellipse([x-1, y-1, x+1, y+1], fill=(255, 255, 255, 12))
             
-    overlay = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    d_overlay = ImageDraw.Draw(overlay)
-    for y in range(160):
-        alpha = int((1 - y / 160) * 110)
-        d_overlay.line([(0, y), (WIDTH, y)], fill=(8, 10, 14, alpha))
-        d_overlay.line([(0, HEIGHT - y), (WIDTH, HEIGHT - y)], fill=(8, 10, 14, alpha))
-    return Image.alpha_composite(base, overlay)
+    # Віньєтка
+    vignette = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    v_draw = ImageDraw.Draw(vignette)
+    for y in range(200):
+        a = int((1 - y/200) * 130)
+        v_draw.line([(0, y), (WIDTH, y)], fill=(12, 14, 18, a))
+        v_draw.line([(0, HEIGHT - y), (WIDTH, HEIGHT - y)], fill=(12, 14, 18, a))
+    canvas = Image.alpha_composite(canvas, vignette)
+    
+    # Верхня шапка
+    font_masthead = get_best_font(34, bold=True)
+    font_category = get_best_font(28, bold=True)
+    
+    header_box = Image.new("RGBA", (WIDTH, 170), (0, 0, 0, 0))
+    h_draw = ImageDraw.Draw(header_box)
+    h_draw.rectangle([0, 15, WIDTH, 72], fill=(255, 215, 0))
+    h_draw.text((WIDTH // 2, 43), "● ДЕНЬ ЗА ДНЕМ • КРИМІНАЛЬНА ХРОНІКА ●", font=font_masthead, fill=(15, 15, 15), anchor="mm")
+    
+    h_draw.rectangle([0, 72, WIDTH, 120], fill=(32, 36, 46))
+    h_draw.text((60, 96), "РЕГІОН: ХМЕЛЬНИЧЧИНА", font=font_category, fill=(200, 210, 230), anchor="lm")
+    h_draw.text((WIDTH - 60, 96), "ЕКСКЛЮЗИВ", font=font_category, fill=(255, 85, 0), anchor="rm")
+    
+    canvas.paste(header_box, (0, 0), header_box)
+    return canvas
 
-def create_photo_cutout(img_path, target_width=860, angle=-1.8):
+def create_photo_cutout(img_path):
     try:
         src = Image.open(img_path).convert("RGBA")
     except Exception:
-        src = Image.new("RGBA", (800, 600), (35, 42, 54, 255))
+        src = Image.new("RGBA", (800, 600), (45, 52, 68, 255))
         
+    target_w = 880
     aspect = src.height / src.width
-    th = int(target_width * aspect)
-    if th > 950:
-        th = 950
-        target_width = int(th / aspect)
-        
-    src = src.resize((target_width, th), Image.Resampling.LANCZOS)
+    target_h = int(target_w * aspect)
+    if target_h > 860:
+        target_h = 860
+        target_w = int(target_h / aspect)
+    src = src.resize((target_w, target_h), Image.Resampling.LANCZOS)
     
-    border_px = 22
-    pw = target_width + border_px * 2
-    ph = th + border_px * 2 + 25
+    border = 20
+    pw = target_w + border * 2
+    ph = target_h + border * 2 + 42
     
-    paper = Image.new("RGBA", (pw, ph), (250, 248, 242, 255))
-    paper.paste(src, (border_px, border_px))
+    polaroid = Image.new("RGBA", (pw, ph), (252, 250, 245, 255))
+    polaroid.paste(src, (border, border))
     
-    p_draw = ImageDraw.Draw(paper)
-    p_draw.rectangle([border_px, border_px, border_px + target_width, border_px + th], outline=(205, 200, 190), width=2)
+    font_category = get_best_font(28, bold=True)
+    font_small = get_best_font(24, bold=False)
     
-    def apply_tape(im, x, y, rot):
-        tape = Image.new("RGBA", (140, 42), (235, 225, 190, 210))
+    p_draw = ImageDraw.Draw(polaroid)
+    p_draw.rectangle([border, border, border + target_w, border + target_h], outline=(210, 205, 195), width=2)
+    p_draw.text((border + 20, border + target_h + 21), "МАТЕРІАЛИ СПРАВИ • СЛІДСТВО", font=font_small, fill=(120, 115, 105), anchor="lm")
+    
+    # Штамп ДОКАЗ №1
+    stamp = Image.new("RGBA", (190, 44), (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(stamp)
+    s_draw.rectangle([0, 0, 190, 44], fill=(220, 40, 40), outline=(255, 255, 255), width=2)
+    s_draw.text((95, 22), "ДОКАЗ №1", font=font_category, fill=(255, 255, 255), anchor="mm")
+    polaroid.paste(stamp, (pw - 210, border + target_h - 22), stamp)
+    
+    # Скотч на кутах
+    def add_tape(im, x, y, rot):
+        tape = Image.new("RGBA", (140, 40), (240, 230, 195, 220))
         t_draw = ImageDraw.Draw(tape)
-        t_draw.line([(0, 0), (140, 0)], fill=(245, 238, 215, 230), width=1)
-        r_tape = tape.rotate(rot, expand=True, resample=Image.Resampling.BICUBIC)
-        im.paste(r_tape, (x, y), r_tape)
+        t_draw.line([(0, 0), (140, 0)], fill=(255, 245, 220, 240), width=1)
+        r = tape.rotate(rot, expand=True, resample=Image.Resampling.BICUBIC)
+        im.paste(r, (x, y), r)
         
-    apply_tape(paper, 18, -12, 16)
-    apply_tape(paper, pw - 145, -12, -14)
+    add_tape(polaroid, 20, -12, 14)
+    add_tape(polaroid, pw - 145, -12, -12)
     
-    rotated = paper.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
+    rotated = polaroid.rotate(-1.5, expand=True, resample=Image.Resampling.BICUBIC)
     
     pad = 40
     shadow = Image.new("RGBA", (rotated.width + pad * 2, rotated.height + pad * 2), (0, 0, 0, 0))
-    alpha_mask = rotated.split()[3]
-    dark_shape = Image.new("RGBA", rotated.size, (10, 10, 14, 130))
-    shadow.paste(dark_shape, (pad + 10, pad + 16), alpha_mask)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=14))
+    alpha = rotated.split()[3]
+    dark = Image.new("RGBA", rotated.size, (10, 12, 16, 140))
+    shadow.paste(dark, (pad + 10, pad + 18), alpha)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=16))
     shadow.paste(rotated, (pad, pad), rotated)
     return shadow
 
-def pre_render_sticker(text, font, bg_color, text_color, angle=0.0, pad_x=28, pad_y=14):
+def pre_render_sticker(text, font, bg_color, text_color, angle=0.0, pad_x=24, pad_y=12):
     bbox = font.getbbox(text)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
@@ -123,14 +157,14 @@ def pre_render_sticker(text, font, bg_color, text_color, angle=0.0, pad_x=28, pa
     return sticker
 
 def create_vertical_video(image_urls, script_text):
-    video_duration = 15.0
+    # Швидкий, енергійний темп для TikTok (9 секунд)
+    video_duration = 9.0
     fps = 20
     output_path = "ready_for_reels.mp4"
     
     if isinstance(image_urls, str):
         image_urls = [image_urls]
         
-    # Завантаження фотографій з захистом від блокування
     valid_img_paths = []
     if image_urls:
         for i, url in enumerate(image_urls[:3]):
@@ -145,21 +179,18 @@ def create_vertical_video(image_urls, script_text):
                             handler.write(img_response.content)
                         valid_img_paths.append(path)
                 except Exception as e:
-                    print(f"Помилка завантаження фото: {e}")
+                    print(f"Помилка фото: {e}")
             elif os.path.exists(url):
                 valid_img_paths.append(url)
                 
     cutouts = []
-    angles = [-2.0, 1.8, -1.2]
     if valid_img_paths:
-        for idx, p in enumerate(valid_img_paths):
-            cutouts.append(create_photo_cutout(p, target_width=860, angle=angles[idx % len(angles)]))
+        for p in valid_img_paths:
+            cutouts.append(create_photo_cutout(p))
     else:
         dummy = Image.new("RGB", (800, 600), (35, 42, 54))
-        d_draw = ImageDraw.Draw(dummy)
-        d_draw.text((400, 300), "ДЕНЬ ЗА ДНЕМ", anchor="mm", fill=(180, 190, 210))
         dummy.save("temp_dummy.jpg")
-        cutouts.append(create_photo_cutout("temp_dummy.jpg", target_width=860, angle=-1.5))
+        cutouts.append(create_photo_cutout("temp_dummy.jpg"))
         
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '').replace('«', '').replace('»', '')
     raw_phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
@@ -169,109 +200,89 @@ def create_vertical_video(image_urls, script_text):
     num_phrases = len(raw_phrases)
     time_per_phrase = video_duration / num_phrases
     
-    font_header = get_best_font(42, bold=True)
-    font_sticker = get_best_font(50, bold=True)
-    font_badge = get_best_font(32, bold=True)
-    font_small = get_best_font(28, bold=False)
+    font_sticker = get_best_font(48, bold=True)
+    font_category = get_best_font(28, bold=True)
+    font_small = get_best_font(26, bold=False)
     
-    base_bg = create_paper_texture()
+    base_bg = create_editorial_bg()
     
-    # Шапка
-    badge_layer = Image.new("RGBA", (WIDTH, 140), (0, 0, 0, 0))
-    b_draw = ImageDraw.Draw(badge_layer)
-    b_draw.rectangle([70, 40, WIDTH - 70, 115], fill=(255, 85, 0))
-    b_draw.text((WIDTH // 2, 77), "ДЕНЬ ЗА ДНЕМ • ЕКСКЛЮЗИВ", font=font_header, fill=(255, 255, 255), anchor="mm")
-    tape = Image.new("RGBA", (90, 30), (240, 230, 200, 210))
-    badge_layer.paste(tape, (55, 25), tape)
-    base_bg.paste(badge_layer, (0, 0), badge_layer)
+    # Картка розслідування (досьє)
+    card_w = 940
+    card_h = 560
+    card_x = (WIDTH - card_w) // 2
+    card_y = 1140
     
-    # Підвал
-    f_draw = ImageDraw.Draw(base_bg)
-    f_draw.line([(60, 1780), (WIDTH - 60, 1780)], fill=(120, 125, 140), width=2)
-    f_draw.text((WIDTH // 2, 1830), "Читайте повну новину на сайті denzadnem.com.ua", font=font_small, fill=(200, 205, 220), anchor="mm")
+    note_box = Image.new("RGBA", (card_w, card_h), (28, 32, 42, 245))
+    n_draw = ImageDraw.Draw(note_box)
+    n_draw.rectangle([0, 0, card_w - 1, card_h - 1], outline=(255, 215, 0), width=3)
+    
+    pin_tag = Image.new("RGBA", (240, 40), (255, 85, 0))
+    p_draw = ImageDraw.Draw(pin_tag)
+    p_draw.text((120, 20), "СУТЬ ПОДІЇ", font=font_category, fill=(255, 255, 255), anchor="mm")
+    note_box.paste(pin_tag, (30, -18), pin_tag)
+    
+    note_shadow = Image.new("RGBA", (card_w + 30, card_h + 30), (0, 0, 0, 0))
+    ns_draw = ImageDraw.Draw(note_shadow)
+    ns_draw.rectangle([10, 10, card_w + 10, card_h + 10], fill=(0, 0, 0, 120))
+    note_shadow = note_shadow.filter(ImageFilter.GaussianBlur(radius=12))
 
-    # Плашка деталей
-    badge_w = 680
-    badge_h = 52
-    m_box = Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
-    m_draw = ImageDraw.Draw(m_box)
-    m_draw.rectangle([0, 0, badge_w, badge_h], fill=(20, 24, 34, 235), outline=(255, 215, 0), width=2)
-    m_draw.text((badge_w // 2, badge_h // 2), "ПОДРОБИЦІ РОЗСЛІДУВАННЯ", font=font_badge, fill=(255, 230, 0), anchor="mm")
-
+    cta_y = card_y + card_h - 85
+    
     sticker_color_schemes = [
-        [( (255, 230, 0), (15, 15, 15), -1.5 ), ( (250, 250, 250), (15, 15, 15), 1.2 ), ( (255, 55, 35), (255, 255, 255), -0.8 )],
-        [( (255, 85, 0), (255, 255, 255), 1.0 ), ( (250, 250, 250), (15, 15, 15), -1.2 ), ( (255, 230, 0), (15, 15, 15), 1.5 )],
-        [( (0, 220, 240), (15, 15, 15), -1.0 ), ( (250, 250, 250), (15, 15, 15), 1.4 ), ( (255, 55, 35), (255, 255, 255), -1.2 )],
-        [( (255, 230, 0), (15, 15, 15), 1.2 ), ( (255, 85, 0), (255, 255, 255), -1.0 ), ( (250, 250, 250), (15, 15, 15), 0.8 )],
+        [( (255, 220, 0), (15, 15, 15), -1.0 ), ( (255, 255, 255), (15, 15, 15), 1.2 ), ( (255, 60, 40), (255, 255, 255), -0.8 )],
+        [( (255, 85, 0), (255, 255, 255), 1.0 ), ( (255, 255, 255), (15, 15, 15), -1.2 ), ( (255, 220, 0), (15, 15, 15), 1.4 )],
+        [( (0, 225, 245), (15, 15, 15), -1.2 ), ( (255, 255, 255), (15, 15, 15), 1.0 ), ( (255, 60, 40), (255, 255, 255), -1.0 )]
     ]
 
     timeline_states = []
-    y_center_start = 1260
-    line_spacing = 115
 
-    for p_idx, text in enumerate(raw_phrases):
+    for p_idx, phrase_text in enumerate(raw_phrases):
         p_start = p_idx * time_per_phrase
-        p_dur = time_per_phrase
         
-        words = text.split()
-        lines = []
-        cur = []
-        for w in words:
-            cur.append(w)
-            if len(" ".join(cur)) > 19:
-                if len(cur) > 1:
-                    cur.pop()
-                    lines.append(" ".join(cur))
-                    cur = [w]
-                else:
-                    lines.append(" ".join(cur))
-                    cur = []
-        if cur:
-            lines.append(" ".join(cur))
-        lines = lines[:3]
+        # Обгортання ТІЛЬКИ ЦІЛИМИ СЛОВАМИ (без обрізання!)
+        wrapped_lines = textwrap.wrap(phrase_text, width=22)[:3]
         
-        phrase_canvas = base_bg.copy()
-        cutout = cutouts[p_idx % len(cutouts)]
-        px = (WIDTH - cutout.width) // 2
-        py = 175
-        phrase_canvas.paste(cutout, (px, py), cutout)
+        p_canvas = base_bg.copy()
+        photo = cutouts[p_idx % len(cutouts)]
+        px = (WIDTH - photo.width) // 2
+        p_canvas.paste(photo, (px, 150), photo)
+        
+        p_canvas.paste(note_shadow, (card_x - 5, card_y - 5), note_shadow)
+        p_canvas.paste(note_box, (card_x, card_y), note_box)
+        
+        c_draw = ImageDraw.Draw(p_canvas)
+        c_draw.rectangle([card_x + 30, cta_y, card_x + card_w - 30, cta_y + 55], fill=(20, 24, 32), outline=(255, 255, 255, 50), width=1)
+        c_draw.text((WIDTH // 2, cta_y + 27), "Читайте продовження на denzadnem.com.ua", font=font_small, fill=(255, 215, 0), anchor="mm")
         
         scheme = sticker_color_schemes[p_idx % len(sticker_color_schemes)]
-        rendered_stickers = []
-        for l_idx, line_txt in enumerate(lines):
+        y_pos = card_y + 65
+        line_stickers = []
+        for l_idx, line in enumerate(wrapped_lines):
             bg_c, txt_c, ang = scheme[l_idx % len(scheme)]
-            stk = pre_render_sticker(line_txt.upper(), font_sticker, bg_c, txt_c, angle=ang)
-            stk_x = int(WIDTH // 2 - stk.width / 2)
-            stk_y = int((y_center_start + l_idx * line_spacing) - stk.height / 2)
-            rendered_stickers.append((stk, stk_x, stk_y))
+            stk = pre_render_sticker(line.upper(), font_sticker, bg_c, txt_c, angle=ang, pad_x=24, pad_y=12)
+            sx = int(WIDTH // 2 - stk.width / 2)
+            line_stickers.append((stk, sx, y_pos))
+            y_pos += 110
             
-        s1 = phrase_canvas.copy()
-        if len(rendered_stickers) > 0:
-            stk, sx, sy = rendered_stickers[0]
+        # Енергійна поява: рядки з'являються кожні 0.35 с
+        s1 = p_canvas.copy()
+        if len(line_stickers) > 0:
+            stk, sx, sy = line_stickers[0]
             s1.paste(stk, (sx, sy), stk)
             
-        t_s1 = p_start
-        t_s2 = p_start + p_dur * 0.28
-        t_s3 = p_start + p_dur * 0.56
-        t_s4 = p_start + p_dur * 0.75
-        
         s2 = s1.copy()
-        if len(rendered_stickers) > 1:
-            stk, sx, sy = rendered_stickers[1]
+        if len(line_stickers) > 1:
+            stk, sx, sy = line_stickers[1]
             s2.paste(stk, (sx, sy), stk)
             
         s3 = s2.copy()
-        if len(rendered_stickers) > 2:
-            stk, sx, sy = rendered_stickers[2]
+        if len(line_stickers) > 2:
+            stk, sx, sy = line_stickers[2]
             s3.paste(stk, (sx, sy), stk)
             
-        s4 = s3.copy()
-        s4.paste(m_box, ((WIDTH - badge_w) // 2, 1660), m_box)
-        
-        timeline_states.append({"t_start": t_s1, "img": s1})
-        timeline_states.append({"t_start": t_s2, "img": s2})
-        timeline_states.append({"t_start": t_s3, "img": s3})
-        timeline_states.append({"t_start": t_s4, "img": s4})
+        timeline_states.append({"t_start": p_start, "img": s1})
+        timeline_states.append({"t_start": p_start + 0.35, "img": s2})
+        timeline_states.append({"t_start": p_start + 0.70, "img": s3})
 
     timeline_states.sort(key=lambda s: s["t_start"])
 
@@ -282,7 +293,6 @@ def create_vertical_video(image_urls, script_text):
                 chosen = s["img"]
             else:
                 break
-                
         frame = chosen.copy()
         draw = ImageDraw.Draw(frame)
         draw.rectangle([0, 0, WIDTH, 12], fill=(40, 45, 55))
@@ -331,7 +341,7 @@ if st.button("🚀 Згенерувати контент"):
                 latest_news = selected_news 
                 clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
                 
-                # 1. Завантажуємо РЕАЛЬНЕ фото зі статті на сайті
+                # Фото зі сторінки статті
                 found_images = []
                 if hasattr(latest_news, 'link') and latest_news.link:
                     try:
@@ -350,25 +360,21 @@ if st.button("🚀 Згенерувати контент"):
 
                 st.write("✍️ Генеруємо сценарій...")
                 prompt = f"""Ти креативний контент-мейкер. Напиши текст, який буде з'являтися прямо НА ЕКРАНІ у відео TikTok/Reels. Озвучки не буде, відео читатимуть очима!
-ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3-4 короткі фрази (кожна з нового рядка, через Enter). 
-ЖОДНИХ коментарів, жодних позначок часу, жодних слів "Хук", "Суть", "Текст на екрані", "Кадр". Без зірочок (*) і без форматування. Тільки сам текст, який побачить глядач.
+ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3 короткі фрази (кожна з нового рядка). 
+Пиши інтригуюче, кожна фраза максимум 5-7 слів! ЖОДНИХ коментарів, зірочок і тире.
 Новина: {clean_text}"""
 
-                prompt_desc = f"""Напиши короткий, інтригуючий текст для опису під відео в TikTok/Reels про цю новину. 
-Обов'язково додай 5-7 релевантних хештегів (завжди включай #новини #деньзаднем #хмельниччина). 
-Пиши простою мовою, без зірочок і складного форматування.
+                prompt_desc = f"""Напиши короткий, інтригуючий опис для TikTok до цієї новини з 5-7 хештегами (#новини #деньзаднем #хмельниччина).
 Новина: {clean_text}"""
 
-                # Розумний бекап-сценарій на випадок збою API
-                fallback_lines = [
-                    latest_news.title[:45],
-                    clean_text[:50] + "...",
-                    "Подробиці читайте на сайті ДЕНЬ ЗА ДНЕМ!"
-                ]
-                script = "\n".join(fallback_lines)
+                # Надійний бекап-сценарій без обрізання слів
+                words_title = latest_news.title.split()
+                line1 = " ".join(words_title[:6])
+                line2 = " ".join(words_title[6:12]) if len(words_title) > 6 else "Подробиці зухвалого злочину"
+                line3 = "Деталі розслідування на сайті"
+                script = f"{line1}\n{line2}\n{line3}"
                 social_desc = f"{latest_news.title}\n\nДеталі читайте на сайті!\n#новини #деньзаднем #хмельниччина"
 
-                # Спроба з кількома моделями на випадок недоступності
                 models_to_try = ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
                 for m_name in models_to_try:
                     try:
@@ -379,7 +385,7 @@ if st.button("🚀 Згенерувати контент"):
                         if response.text and len(response.text.strip()) > 10:
                             script = response.text.strip()
                             break
-                    except Exception as e:
+                    except Exception:
                         continue
                             
                 time.sleep(1)
@@ -393,14 +399,13 @@ if st.button("🚀 Згенерувати контент"):
                         if resp_desc.text:
                             social_desc = resp_desc.text.strip()
                             break
-                    except Exception as e:
+                    except Exception:
                         continue
                 
-                st.write("🎬 Збираємо відеоколаж...")
+                st.write("🎬 Збираємо динамічне відео...")
                 video_path = create_vertical_video(found_images, script)
                 status.update(label="Готово!", state="complete", expanded=False)
             
-            # Результати
             st.success(f"Новина: {latest_news.title}")
             col1, col2 = st.columns(2)
             with col1:
