@@ -223,7 +223,7 @@ def create_vertical_video(image_path, phrases, output_path="ready_for_reels.mp4"
     phrase_data = []
     for p_text in phrases:
         clean = p_text.replace('*', '').replace('_', '').replace('"', '').strip()
-        lines = textwrap.wrap(clean, width=24) # Без відкидання рядків!
+        lines = textwrap.wrap(clean, width=24) # Без відкидання рядків
         if not lines:
             lines = [clean]
             
@@ -351,9 +351,14 @@ if st.button("🚀 Згенерувати відео"):
 5. Рядок 3: "Подробиці читайте на сайті День за днем"
 6. Кожен рядок до 5-8 слів, суто факти, без лапок, зірочок, нумерації та емодзі."""
 
-                # Надійний виклик Gemini з fallback
+                # Безпечний виклик моделей з пріоритетом актуальної gemini-3.8-flash
                 script_text = ""
-                available_models = ["gemini-3.8-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
+                available_models = [
+                    "gemini-3.8-flash",
+                    "gemini-3-flash",
+                    "gemini-2.5-flash",
+                    "gemini-2.0-flash"
+                ]
                 last_err = None
                 
                 for mod in available_models:
@@ -369,13 +374,18 @@ if st.button("🚀 Згенерувати відео"):
                         last_err = e
                         continue
                         
+                # Якщо ШІ тимчасово недоступний або лімітований, створюємо фрази з самої статті
                 if not script_text:
-                    st.error(f"Помилка ШІ: {last_err}")
-                    st.stop()
-                    
-                phrases = [p.strip() for p in script_text.split('\n') if len(p.strip()) > 3]
-                if len(phrases) < 2:
-                    phrases = [latest_news.title, "Подробиці читайте на сайті День за днем"]
+                    st.info("ℹ️ Формуємо текст субтитрів безпосередньо з обраної новини...")
+                    p1 = re.sub(r'[\r\n]+', ' ', latest_news.title).strip()
+                    sentences = [s.strip() for s in re.split(r'[.!?]+', clean_text) if len(s.strip()) > 15 and len(s.strip()) < 90]
+                    p2 = sentences[0] if sentences else "Подробиці події на Хмельниччині з'ясовують правоохоронці"
+                    p3 = "Подробиці читайте на сайті День за днем"
+                    phrases = [p1, p2, p3]
+                else:
+                    phrases = [p.strip() for p in script_text.split('\n') if len(p.strip()) > 3]
+                    if len(phrases) < 2:
+                        phrases = [latest_news.title, "Подробиці читайте на сайті День за днем"]
                     
                 st.write("🎬 Рендеримо відео...")
                 video_file = create_vertical_video(img_path, phrases, "ready_for_reels.mp4")
