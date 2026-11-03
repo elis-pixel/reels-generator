@@ -353,7 +353,7 @@ if st.button("🚀 Згенерувати відео"):
 
                 # Надійний виклик Gemini з fallback
                 script_text = ""
-                available_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
+                available_models = ["gemini-3.8-flash", "gemini-1.5-flash", "gemini-2.5-flash"]
                 last_err = None
                 
                 for mod in available_models:
