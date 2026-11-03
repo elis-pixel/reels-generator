@@ -10,7 +10,6 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from google import genai
 from moviepy import VideoClip
 
-# Налаштування сторінки
 st.set_page_config(page_title="Reels Генератор — День за Днем", page_icon="📱", layout="wide")
 st.title("🤖 Zine-Reels для ДЕНЬ ЗА ДНЕМ")
 
@@ -18,6 +17,12 @@ api_key = st.text_input("Введіть ключ Gemini API (починаєть�
 
 WIDTH = 1080
 HEIGHT = 1920
+
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    'Referer': 'https://denzadnem.com.ua/'
+}
 
 def get_best_font(size, bold=True):
     candidates = [
@@ -78,7 +83,6 @@ def create_photo_cutout(img_path, target_width=860, angle=-1.8):
     p_draw = ImageDraw.Draw(paper)
     p_draw.rectangle([border_px, border_px, border_px + target_width, border_px + th], outline=(205, 200, 190), width=2)
     
-    # Скотч на кутах
     def apply_tape(im, x, y, rot):
         tape = Image.new("RGBA", (140, 42), (235, 225, 190, 210))
         t_draw = ImageDraw.Draw(tape)
@@ -118,35 +122,30 @@ def pre_render_sticker(text, font, bg_color, text_color, angle=0.0, pad_x=28, pa
         sticker = sticker.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
     return sticker
 
-def get_full_image_url(thumb_url):
-    if thumb_url:
-        return re.sub(r'-\d+x\d+(\.\w+)$', r'\1', thumb_url)
-    return None
-
 def create_vertical_video(image_urls, script_text):
     video_duration = 15.0
-    fps = 20  # 20 FPS забезпечує плавний рух і вдвічі швидший експорт
+    fps = 20
     output_path = "ready_for_reels.mp4"
     
     if isinstance(image_urls, str):
         image_urls = [image_urls]
         
+    # Завантаження фотографій з захистом від блокування
     valid_img_paths = []
     if image_urls:
-        headers = {'User-Agent': 'Mozilla/5.0'}
         for i, url in enumerate(image_urls[:3]):
             if not url:
                 continue
             if url.startswith("http://") or url.startswith("https://"):
                 try:
-                    img_response = requests.get(url, headers=headers, timeout=4)
-                    if img_response.status_code == 200:
+                    img_response = requests.get(url, headers=BROWSER_HEADERS, timeout=6)
+                    if img_response.status_code == 200 and len(img_response.content) > 1000:
                         path = f"temp_news_img_{i}.jpg"
                         with open(path, 'wb') as handler:
                             handler.write(img_response.content)
                         valid_img_paths.append(path)
                 except Exception as e:
-                    print(f"Помилка завантаження: {e}")
+                    print(f"Помилка завантаження фото: {e}")
             elif os.path.exists(url):
                 valid_img_paths.append(url)
                 
@@ -171,13 +170,13 @@ def create_vertical_video(image_urls, script_text):
     time_per_phrase = video_duration / num_phrases
     
     font_header = get_best_font(42, bold=True)
-    font_sticker = get_best_font(52, bold=True)
+    font_sticker = get_best_font(50, bold=True)
     font_badge = get_best_font(32, bold=True)
     font_small = get_best_font(28, bold=False)
     
     base_bg = create_paper_texture()
     
-    # Заголовок зверху
+    # Шапка
     badge_layer = Image.new("RGBA", (WIDTH, 140), (0, 0, 0, 0))
     b_draw = ImageDraw.Draw(badge_layer)
     b_draw.rectangle([70, 40, WIDTH - 70, 115], fill=(255, 85, 0))
@@ -186,12 +185,12 @@ def create_vertical_video(image_urls, script_text):
     badge_layer.paste(tape, (55, 25), tape)
     base_bg.paste(badge_layer, (0, 0), badge_layer)
     
-    # Нижній напис
+    # Підвал
     f_draw = ImageDraw.Draw(base_bg)
     f_draw.line([(60, 1780), (WIDTH - 60, 1780)], fill=(120, 125, 140), width=2)
     f_draw.text((WIDTH // 2, 1830), "Читайте повну новину на сайті denzadnem.com.ua", font=font_small, fill=(200, 205, 220), anchor="mm")
 
-    # Плашка деталей розслідування
+    # Плашка деталей
     badge_w = 680
     badge_h = 52
     m_box = Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
@@ -206,7 +205,6 @@ def create_vertical_video(image_urls, script_text):
         [( (255, 230, 0), (15, 15, 15), 1.2 ), ( (255, 85, 0), (255, 255, 255), -1.0 ), ( (250, 250, 250), (15, 15, 15), 0.8 )],
     ]
 
-    # Швидке попереднє кешування станів кадрів
     timeline_states = []
     y_center_start = 1260
     line_spacing = 115
@@ -247,7 +245,6 @@ def create_vertical_video(image_urls, script_text):
             stk_y = int((y_center_start + l_idx * line_spacing) - stk.height / 2)
             rendered_stickers.append((stk, stk_x, stk_y))
             
-        # Етапи появи рядків
         s1 = phrase_canvas.copy()
         if len(rendered_stickers) > 0:
             stk, sx, sy = rendered_stickers[0]
@@ -278,7 +275,6 @@ def create_vertical_video(image_urls, script_text):
 
     timeline_states.sort(key=lambda s: s["t_start"])
 
-    # Турбо-генератор кадрів
     def make_frame(t):
         chosen = timeline_states[0]["img"]
         for s in timeline_states:
@@ -331,30 +327,27 @@ if st.button("🚀 Згенерувати контент"):
             client = genai.Client(api_key=api_key)
             
             with st.status("Обробка...", expanded=True) as status:
-                st.write("🔍 Аналізуємо обрану новину...")
+                st.write("🔍 Завантажуємо статтю та фото з сайту...")
                 latest_news = selected_news 
                 clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
                 
+                # 1. Завантажуємо РЕАЛЬНЕ фото зі статті на сайті
                 found_images = []
-                if 'enclosures' in latest_news:
-                    for enc in latest_news.enclosures:
-                        if 'image' in enc.type:
-                            found_images.append(enc.href)
-                            
-                if 'media_content' in latest_news:
-                    for media in latest_news.media_content:
-                        if 'url' in media:
-                            found_images.append(media['url'])
-                            
-                if 'content' in latest_news or 'summary' in latest_news:
-                    html_source = latest_news.content[0].value if 'content' in latest_news else latest_news.summary
-                    soup = BeautifulSoup(html_source, 'html.parser')
-                    for img_tag in soup.find_all('img'):
-                        if img_tag.get('src') and img_tag['src'] not in found_images:
-                            found_images.append(img_tag['src'])
-                            
-                original_image_urls = [get_full_image_url(url) for url in found_images]
-                
+                if hasattr(latest_news, 'link') and latest_news.link:
+                    try:
+                        art_resp = requests.get(latest_news.link, headers=BROWSER_HEADERS, timeout=5)
+                        if art_resp.status_code == 200:
+                            art_soup = BeautifulSoup(art_resp.text, 'html.parser')
+                            og_img = art_soup.find('meta', property='og:image')
+                            if og_img and og_img.get('content'):
+                                found_images.append(og_img['content'])
+                            for img_tag in art_soup.find_all('img'):
+                                src = img_tag.get('src')
+                                if src and 'uploads' in src and src not in found_images:
+                                    found_images.append(src)
+                    except Exception as e:
+                        print(f"Помилка парсингу статті: {e}")
+
                 st.write("✍️ Генеруємо сценарій...")
                 prompt = f"""Ти креативний контент-мейкер. Напиши текст, який буде з'являтися прямо НА ЕКРАНІ у відео TikTok/Reels. Озвучки не буде, відео читатимуть очима!
 ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3-4 короткі фрази (кожна з нового рядка, через Enter). 
@@ -366,47 +359,45 @@ if st.button("🚀 Згенерувати контент"):
 Пиши простою мовою, без зірочок і складного форматування.
 Новина: {clean_text}"""
 
-                script = "Не вдалося згенерувати сценарій. Перевірте API ключ або ліміти."
-                social_desc = f"{latest_news.title}\n\nДеталі на сайті!\n#новини #деньзаднем #хмельниччина"
+                # Розумний бекап-сценарій на випадок збою API
+                fallback_lines = [
+                    latest_news.title[:45],
+                    clean_text[:50] + "...",
+                    "Подробиці читайте на сайті ДЕНЬ ЗА ДНЕМ!"
+                ]
+                script = "\n".join(fallback_lines)
+                social_desc = f"{latest_news.title}\n\nДеталі читайте на сайті!\n#новини #деньзаднем #хмельниччина"
 
-                # 1. Запит тексту
-                for sproba in range(3):
+                # Спроба з кількома моделями на випадок недоступності
+                models_to_try = ['gemini-3.8-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+                for m_name in models_to_try:
                     try:
                         response = client.models.generate_content(
-                            model='gemini-3.8-flash',
+                            model=m_name,
                             contents=prompt
                         )
-                        if response.text:
-                            script = response.text 
-                            break 
-                    except Exception as e:
-                        if "503" in str(e) or "429" in str(e):
-                            st.warning(f"Сервер зайнятий. Спроба {sproba + 1} з 3... Очікування...")
-                            time.sleep(5) 
-                        else:
-                            st.warning(f"Помилка ШІ (сценарій): {e}")
+                        if response.text and len(response.text.strip()) > 10:
+                            script = response.text.strip()
                             break
+                    except Exception as e:
+                        continue
                             
-                # 2. Запит опису (швидка пауза 1 сек)
                 time.sleep(1)
-                st.write("📝 Генеруємо опис для соцмереж...")
-                for sproba in range(3):
+                st.write("📝 Генеруємо опис...")
+                for m_name in models_to_try:
                     try:
                         resp_desc = client.models.generate_content(
-                            model='gemini-3.8-flash',
+                            model=m_name,
                             contents=prompt_desc
                         )
                         if resp_desc.text:
-                            social_desc = resp_desc.text
+                            social_desc = resp_desc.text.strip()
                             break
                     except Exception as e:
-                        if "503" in str(e) or "429" in str(e):
-                            time.sleep(5)
-                        else:
-                            break
+                        continue
                 
-                st.write("🎬 Швидкий монтаж відеоколажу...")
-                video_path = create_vertical_video(original_image_urls, script)
+                st.write("🎬 Збираємо відеоколаж...")
+                video_path = create_vertical_video(found_images, script)
                 status.update(label="Готово!", state="complete", expanded=False)
             
             # Результати
@@ -426,4 +417,4 @@ if st.button("🚀 Згенерувати контент"):
                 st.text_area("Скопіюй для публікації (можна редагувати):", social_desc, height=200)
                 
         except Exception as e:
-            st.error(f"Виникла загальна помилка: {e}")
+            st.error(f"Виникла помилка: {e}")
