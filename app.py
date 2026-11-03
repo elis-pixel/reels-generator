@@ -11,8 +11,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from google import genai
 from moviepy import VideoClip
 
-st.set_page_config(page_title="Reels Генератор — День за Днем", page_icon="📱", layout="wide")
-st.title("🤖 Zine-Reels для ДЕНЬ ЗА ДНЕМ")
+st.set_page_config(page_title="Reels Генератор — День за Днем", page_icon="📰", layout="wide")
+st.title("📰 Новини для ДЕНЬ ЗА ДНЕМ (Reels / TikTok)")
 
 api_key = st.text_input("Введіть ключ Gemini API (починається з AQ...):", type="password")
 
@@ -43,102 +43,78 @@ def get_best_font(size, bold=True):
                 continue
     return ImageFont.load_default()
 
-def create_editorial_bg():
-    canvas = Image.new("RGBA", (WIDTH, HEIGHT), (22, 24, 30, 255))
+def create_news_background():
+    """Створює стриманий сучасний графітовий фон з легким патерном"""
+    canvas = Image.new("RGBA", (WIDTH, HEIGHT), (18, 20, 26, 255))
     draw = ImageDraw.Draw(canvas)
     
-    # Діагональні смуги
-    for x in range(-WIDTH, WIDTH * 2, 48):
-        draw.line([(x, 0), (x + HEIGHT, HEIGHT)], fill=(255, 255, 255, 6), width=2)
-        
-    # Крапки halftone
-    for x in range(30, WIDTH, 36):
-        for y in range(30, HEIGHT, 36):
-            draw.ellipse([x-1, y-1, x+1, y+1], fill=(255, 255, 255, 12))
+    # Геометрична сітка
+    for x in range(30, WIDTH, 40):
+        for y in range(30, HEIGHT, 40):
+            draw.ellipse([x-1, y-1, x+1, y+1], fill=(255, 255, 255, 8))
             
-    # Віньєтка
+    # М'яка віньєтка
     vignette = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     v_draw = ImageDraw.Draw(vignette)
-    for y in range(200):
-        a = int((1 - y/200) * 130)
-        v_draw.line([(0, y), (WIDTH, y)], fill=(12, 14, 18, a))
-        v_draw.line([(0, HEIGHT - y), (WIDTH, HEIGHT - y)], fill=(12, 14, 18, a))
+    for y in range(180):
+        a = int((1 - y/180) * 110)
+        v_draw.line([(0, y), (WIDTH, y)], fill=(10, 12, 16, a))
+        v_draw.line([(0, HEIGHT - y), (WIDTH, HEIGHT - y)], fill=(10, 12, 16, a))
     canvas = Image.alpha_composite(canvas, vignette)
     
-    # Верхня шапка
-    font_masthead = get_best_font(34, bold=True)
+    # Офіційна плашка медіа зверху
+    font_logo = get_best_font(38, bold=True)
     font_category = get_best_font(28, bold=True)
+    font_small = get_best_font(24, bold=False)
     
-    header_box = Image.new("RGBA", (WIDTH, 170), (0, 0, 0, 0))
-    h_draw = ImageDraw.Draw(header_box)
-    h_draw.rectangle([0, 15, WIDTH, 72], fill=(255, 215, 0))
-    h_draw.text((WIDTH // 2, 43), "● ДЕНЬ ЗА ДНЕМ • КРИМІНАЛЬНА ХРОНІКА ●", font=font_masthead, fill=(15, 15, 15), anchor="mm")
+    h_box = Image.new("RGBA", (WIDTH, 140), (0, 0, 0, 0))
+    h_draw = ImageDraw.Draw(h_box)
     
-    h_draw.rectangle([0, 72, WIDTH, 120], fill=(32, 36, 46))
-    h_draw.text((60, 96), "РЕГІОН: ХМЕЛЬНИЧЧИНА", font=font_category, fill=(200, 210, 230), anchor="lm")
-    h_draw.text((WIDTH - 60, 96), "ЕКСКЛЮЗИВ", font=font_category, fill=(255, 85, 0), anchor="rm")
+    h_draw.rectangle([50, 40, WIDTH - 50, 115], fill=(26, 30, 40), outline=(255, 255, 255, 30), width=1)
+    # Червоний бейдж "НОВИНИ"
+    h_draw.rectangle([50, 40, 250, 115], fill=(225, 40, 40))
+    h_draw.text((150, 77), "НОВИНИ", font=font_category, fill=(255, 255, 255), anchor="mm")
+    # Назва видання
+    h_draw.text((280, 77), "ДЕНЬ ЗА ДНЕМ", font=font_logo, fill=(255, 255, 255), anchor="lm")
+    # Домен
+    h_draw.text((WIDTH - 80, 77), "denzadnem.com.ua", font=font_small, fill=(160, 175, 195), anchor="rm")
     
-    canvas.paste(header_box, (0, 0), header_box)
+    canvas.paste(h_box, (0, 0), h_box)
     return canvas
 
-def create_photo_cutout(img_path):
+def create_clean_photo_frame(img_path):
+    """Створює чисту білу рамку навколо фото статті"""
     try:
         src = Image.open(img_path).convert("RGBA")
     except Exception:
         src = Image.new("RGBA", (800, 600), (45, 52, 68, 255))
         
-    target_w = 880
+    target_w = 940
     aspect = src.height / src.width
     target_h = int(target_w * aspect)
-    if target_h > 860:
-        target_h = 860
+    if target_h > 920:
+        target_h = 920
         target_w = int(target_h / aspect)
     src = src.resize((target_w, target_h), Image.Resampling.LANCZOS)
     
-    border = 20
-    pw = target_w + border * 2
-    ph = target_h + border * 2 + 42
+    border = 14
+    fw = target_w + border * 2
+    fh = target_h + border * 2
     
-    polaroid = Image.new("RGBA", (pw, ph), (252, 250, 245, 255))
-    polaroid.paste(src, (border, border))
+    frame = Image.new("RGBA", (fw, fh), (255, 255, 255, 255))
+    frame.paste(src, (border, border))
     
-    font_category = get_best_font(28, bold=True)
-    font_small = get_best_font(24, bold=False)
-    
-    p_draw = ImageDraw.Draw(polaroid)
-    p_draw.rectangle([border, border, border + target_w, border + target_h], outline=(210, 205, 195), width=2)
-    p_draw.text((border + 20, border + target_h + 21), "МАТЕРІАЛИ СПРАВИ • СЛІДСТВО", font=font_small, fill=(120, 115, 105), anchor="lm")
-    
-    # Штамп ДОКАЗ №1
-    stamp = Image.new("RGBA", (190, 44), (0, 0, 0, 0))
-    s_draw = ImageDraw.Draw(stamp)
-    s_draw.rectangle([0, 0, 190, 44], fill=(220, 40, 40), outline=(255, 255, 255), width=2)
-    s_draw.text((95, 22), "ДОКАЗ №1", font=font_category, fill=(255, 255, 255), anchor="mm")
-    polaroid.paste(stamp, (pw - 210, border + target_h - 22), stamp)
-    
-    # Скотч на кутах
-    def add_tape(im, x, y, rot):
-        tape = Image.new("RGBA", (140, 40), (240, 230, 195, 220))
-        t_draw = ImageDraw.Draw(tape)
-        t_draw.line([(0, 0), (140, 0)], fill=(255, 245, 220, 240), width=1)
-        r = tape.rotate(rot, expand=True, resample=Image.Resampling.BICUBIC)
-        im.paste(r, (x, y), r)
-        
-    add_tape(polaroid, 20, -12, 14)
-    add_tape(polaroid, pw - 145, -12, -12)
-    
-    rotated = polaroid.rotate(-1.5, expand=True, resample=Image.Resampling.BICUBIC)
-    
-    pad = 40
-    shadow = Image.new("RGBA", (rotated.width + pad * 2, rotated.height + pad * 2), (0, 0, 0, 0))
-    alpha = rotated.split()[3]
-    dark = Image.new("RGBA", rotated.size, (10, 12, 16, 140))
-    shadow.paste(dark, (pad + 10, pad + 18), alpha)
+    pad = 35
+    shadow = Image.new("RGBA", (fw + pad * 2, fh + pad * 2), (0, 0, 0, 0))
+    alpha = frame.split()[3]
+    dark = Image.new("RGBA", frame.size, (10, 12, 16, 130))
+    shadow.paste(dark, (pad + 6, pad + 14), alpha)
     shadow = shadow.filter(ImageFilter.GaussianBlur(radius=16))
-    shadow.paste(rotated, (pad, pad), rotated)
+    shadow.paste(frame, (pad, pad), frame)
     return shadow
 
-def pre_render_sticker(text, font, bg_color, text_color, angle=0.0, pad_x=24, pad_y=12):
+def pre_render_news_sticker(text, font, bg_color, text_color, pad_x=28, pad_y=14):
+    """Створює акуратну плашку для тексту"""
     bbox = font.getbbox(text)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
@@ -146,18 +122,15 @@ def pre_render_sticker(text, font, bg_color, text_color, angle=0.0, pad_x=24, pa
     bw = tw + pad_x * 2
     bh = th + pad_y * 2
     
-    sticker = Image.new("RGBA", (bw + 20, bh + 20), (0, 0, 0, 0))
+    sticker = Image.new("RGBA", (bw + 16, bh + 16), (0, 0, 0, 0))
     draw = ImageDraw.Draw(sticker)
-    draw.rectangle([8, 8, bw + 8, bh + 8], fill=(0, 0, 0, 110))
-    draw.rectangle([3, 3, bw + 3, bh + 3], fill=bg_color)
-    draw.text((3 + pad_x - bbox[0], 3 + pad_y - bbox[1]), text, font=font, fill=text_color)
-    
-    if angle != 0:
-        sticker = sticker.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
+    draw.rectangle([6, 6, bw + 6, bh + 6], fill=(0, 0, 0, 95))
+    draw.rectangle([2, 2, bw + 2, bh + 2], fill=bg_color)
+    draw.text((2 + pad_x - bbox[0], 2 + pad_y - bbox[1]), text, font=font, fill=text_color)
     return sticker
 
 def create_vertical_video(image_urls, script_text):
-    # Швидкий, енергійний темп для TikTok (9 секунд)
+    # Динамічний хронометраж 9 секунд
     video_duration = 9.0
     fps = 20
     output_path = "ready_for_reels.mp4"
@@ -183,14 +156,14 @@ def create_vertical_video(image_urls, script_text):
             elif os.path.exists(url):
                 valid_img_paths.append(url)
                 
-    cutouts = []
+    photos = []
     if valid_img_paths:
         for p in valid_img_paths:
-            cutouts.append(create_photo_cutout(p))
+            photos.append(create_clean_photo_frame(p))
     else:
         dummy = Image.new("RGB", (800, 600), (35, 42, 54))
         dummy.save("temp_dummy.jpg")
-        cutouts.append(create_photo_cutout("temp_dummy.jpg"))
+        photos.append(create_clean_photo_frame("temp_dummy.jpg"))
         
     clean_script = script_text.replace('*', '').replace('_', '').replace('"', '').replace('«', '').replace('»', '')
     raw_phrases = [p.strip() for p in clean_script.split('\n') if len(p.strip()) > 3]
@@ -200,38 +173,21 @@ def create_vertical_video(image_urls, script_text):
     num_phrases = len(raw_phrases)
     time_per_phrase = video_duration / num_phrases
     
-    font_sticker = get_best_font(48, bold=True)
-    font_category = get_best_font(28, bold=True)
+    font_sticker = get_best_font(52, bold=True)
     font_small = get_best_font(26, bold=False)
     
-    base_bg = create_editorial_bg()
+    base_bg = create_news_background()
     
-    # Картка розслідування (досьє)
-    card_w = 940
-    card_h = 560
-    card_x = (WIDTH - card_w) // 2
-    card_y = 1140
-    
-    note_box = Image.new("RGBA", (card_w, card_h), (28, 32, 42, 245))
-    n_draw = ImageDraw.Draw(note_box)
-    n_draw.rectangle([0, 0, card_w - 1, card_h - 1], outline=(255, 215, 0), width=3)
-    
-    pin_tag = Image.new("RGBA", (240, 40), (255, 85, 0))
-    p_draw = ImageDraw.Draw(pin_tag)
-    p_draw.text((120, 20), "СУТЬ ПОДІЇ", font=font_category, fill=(255, 255, 255), anchor="mm")
-    note_box.paste(pin_tag, (30, -18), pin_tag)
-    
-    note_shadow = Image.new("RGBA", (card_w + 30, card_h + 30), (0, 0, 0, 0))
-    ns_draw = ImageDraw.Draw(note_shadow)
-    ns_draw.rectangle([10, 10, card_w + 10, card_h + 10], fill=(0, 0, 0, 120))
-    note_shadow = note_shadow.filter(ImageFilter.GaussianBlur(radius=12))
+    # Підвал
+    f_draw = ImageDraw.Draw(base_bg)
+    f_draw.line([(60, 1780), (WIDTH - 60, 1780)], fill=(60, 65, 80), width=1)
+    f_draw.text((WIDTH // 2, 1825), "Більше новин на сайті denzadnem.com.ua", font=font_small, fill=(180, 190, 205), anchor="mm")
 
-    cta_y = card_y + card_h - 85
-    
-    sticker_color_schemes = [
-        [( (255, 220, 0), (15, 15, 15), -1.0 ), ( (255, 255, 255), (15, 15, 15), 1.2 ), ( (255, 60, 40), (255, 255, 255), -0.8 )],
-        [( (255, 85, 0), (255, 255, 255), 1.0 ), ( (255, 255, 255), (15, 15, 15), -1.2 ), ( (255, 220, 0), (15, 15, 15), 1.4 )],
-        [( (0, 225, 245), (15, 15, 15), -1.2 ), ( (255, 255, 255), (15, 15, 15), 1.0 ), ( (255, 60, 40), (255, 255, 255), -1.0 )]
+    # Палітра новинних плашок
+    news_colors = [
+        ((255, 215, 0), (15, 15, 15)),   # Жовтий новинний
+        ((255, 255, 255), (15, 15, 15)), # Чистий білий
+        ((225, 40, 40), (255, 255, 255)) # Червоний
     ]
 
     timeline_states = []
@@ -239,32 +195,24 @@ def create_vertical_video(image_urls, script_text):
     for p_idx, phrase_text in enumerate(raw_phrases):
         p_start = p_idx * time_per_phrase
         
-        # Обгортання ТІЛЬКИ ЦІЛИМИ СЛОВАМИ (без обрізання!)
+        # Обгортання ТІЛЬКИ ЦІЛИМИ СЛОВАМИ
         wrapped_lines = textwrap.wrap(phrase_text, width=22)[:3]
         
         p_canvas = base_bg.copy()
-        photo = cutouts[p_idx % len(cutouts)]
+        photo = photos[p_idx % len(photos)]
         px = (WIDTH - photo.width) // 2
-        p_canvas.paste(photo, (px, 150), photo)
+        p_canvas.paste(photo, (px, 155), photo)
         
-        p_canvas.paste(note_shadow, (card_x - 5, card_y - 5), note_shadow)
-        p_canvas.paste(note_box, (card_x, card_y), note_box)
-        
-        c_draw = ImageDraw.Draw(p_canvas)
-        c_draw.rectangle([card_x + 30, cta_y, card_x + card_w - 30, cta_y + 55], fill=(20, 24, 32), outline=(255, 255, 255, 50), width=1)
-        c_draw.text((WIDTH // 2, cta_y + 27), "Читайте продовження на denzadnem.com.ua", font=font_small, fill=(255, 215, 0), anchor="mm")
-        
-        scheme = sticker_color_schemes[p_idx % len(sticker_color_schemes)]
-        y_pos = card_y + 65
+        y_pos = 1240
         line_stickers = []
         for l_idx, line in enumerate(wrapped_lines):
-            bg_c, txt_c, ang = scheme[l_idx % len(scheme)]
-            stk = pre_render_sticker(line.upper(), font_sticker, bg_c, txt_c, angle=ang, pad_x=24, pad_y=12)
+            bg_c, txt_c = news_colors[l_idx % len(news_colors)]
+            stk = pre_render_news_sticker(line.upper(), font_sticker, bg_c, txt_c)
             sx = int(WIDTH // 2 - stk.width / 2)
             line_stickers.append((stk, sx, y_pos))
-            y_pos += 110
+            y_pos += 115
             
-        # Енергійна поява: рядки з'являються кожні 0.35 с
+        # Швидка поява тексту (0.35 с)
         s1 = p_canvas.copy()
         if len(line_stickers) > 0:
             stk, sx, sy = line_stickers[0]
@@ -295,9 +243,10 @@ def create_vertical_video(image_urls, script_text):
                 break
         frame = chosen.copy()
         draw = ImageDraw.Draw(frame)
-        draw.rectangle([0, 0, WIDTH, 12], fill=(40, 45, 55))
+        # Червоний індикатор прогресу зверху
+        draw.rectangle([0, 0, WIDTH, 10], fill=(30, 34, 44))
         prog = min(1.0, max(0.0, t / video_duration))
-        draw.rectangle([0, 0, int(WIDTH * prog), 12], fill=(255, 85, 0))
+        draw.rectangle([0, 0, int(WIDTH * prog), 10], fill=(225, 40, 40))
         return np.array(frame.convert("RGB"))
 
     clip = VideoClip(make_frame, duration=video_duration).with_fps(fps)
@@ -356,22 +305,20 @@ if st.button("🚀 Згенерувати контент"):
                                 if src and 'uploads' in src and src not in found_images:
                                     found_images.append(src)
                     except Exception as e:
-                        print(f"Помилка парсингу статті: {e}")
+                        print(f"Помилка парсингу: {e}")
 
-                st.write("✍️ Генеруємо сценарій...")
-                prompt = f"""Ти креативний контент-мейкер. Напиши текст, який буде з'являтися прямо НА ЕКРАНІ у відео TikTok/Reels. Озвучки не буде, відео читатимуть очима!
-ВАЖЛИВО: Видай ЛИШЕ чистий текст для екрану. Розбий його на 3 короткі фрази (кожна з нового рядка). 
-Пиши інтригуюче, кожна фраза максимум 5-7 слів! ЖОДНИХ коментарів, зірочок і тире.
+                st.write("✍️ Генеруємо текст...")
+                prompt = f"""Ти редактор новинного сайту. Напиши 3 короткі тези новини для екрану TikTok/Reels. 
+Кожна теза з нового рядка. До 5-7 слів у рядку. Без знаків оклику, без зірочок, без клікбейту — просто чітка суть новини!
 Новина: {clean_text}"""
 
-                prompt_desc = f"""Напиши короткий, інтригуючий опис для TikTok до цієї новини з 5-7 хештегами (#новини #деньзаднем #хмельниччина).
+                prompt_desc = f"""Напиши короткий новинний опис для TikTok до цієї новини з 5-7 хештегами (#новини #деньзаднем #хмельниччина).
 Новина: {clean_text}"""
 
-                # Надійний бекап-сценарій без обрізання слів
                 words_title = latest_news.title.split()
                 line1 = " ".join(words_title[:6])
-                line2 = " ".join(words_title[6:12]) if len(words_title) > 6 else "Подробиці зухвалого злочину"
-                line3 = "Деталі розслідування на сайті"
+                line2 = " ".join(words_title[6:12]) if len(words_title) > 6 else "Подробиці події в регіоні"
+                line3 = "Деталі читайте на сайті ДЕНЬ ЗА ДНЕМ"
                 script = f"{line1}\n{line2}\n{line3}"
                 social_desc = f"{latest_news.title}\n\nДеталі читайте на сайті!\n#новини #деньзаднем #хмельниччина"
 
@@ -402,17 +349,17 @@ if st.button("🚀 Згенерувати контент"):
                     except Exception:
                         continue
                 
-                st.write("🎬 Збираємо динамічне відео...")
+                st.write("🎬 Збираємо новинне відео...")
                 video_path = create_vertical_video(found_images, script)
                 status.update(label="Готово!", state="complete", expanded=False)
             
             st.success(f"Новина: {latest_news.title}")
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader("Відеоколаж (9:16)")
+                st.subheader("Новинне відео (9:16)")
                 st.video(video_path)
                 with open(video_path, "rb") as file:
-                    st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_collage.mp4", mime="video/mp4")
+                    st.download_button("⬇️ Завантажити відео", data=file, file_name="reels_news.mp4", mime="video/mp4")
                     
             with col2:
                 st.subheader("Текст на відео")
