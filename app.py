@@ -4,14 +4,15 @@ import re
 import time
 import textwrap
 import os
-import requests
+import urllib.request
+import xml.etree.ElementTree as ET
 import numpy as np
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from google import genai
 from moviepy import VideoClip
 
-# Налаштування сторінки Streamlit
+# ==================== НАЛАШТУВАННЯ СТОРІНКИ ====================
 st.set_page_config(
     page_title="Reels Генератор | День за днем",
     page_icon="📱",
@@ -19,16 +20,17 @@ st.set_page_config(
 )
 
 st.title("🤖 Новинний Reels Генератор — «ДЕНЬ ЗА ДНЕМ»")
-st.caption("Автоматичне створення стильних вертикальних відео для TikTok / Instagram Reels за 1 клік")
+st.caption("Генерація професійних 15-секундних відео для TikTok та Instagram Reels")
 
 # Введення API ключа
-api_key = st.text_input("Введіть ключ Gemini API:", type="password")
+api_key = st.text_input("Введіть ключ Gemini API (починається з AIza...):", type="password")
 
 WIDTH = 1080
 HEIGHT = 1920
 
+# ==================== ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ ШРИФТІВ ====================
 def get_font(size, bold=True):
-    """Підбирає відповідний шрифт для Windows, Linux (Streamlit Cloud) або MacOS."""
+    """Підбирає доступний якісний шрифт на сервері (Windows / Linux / Streamlit Cloud)."""
     candidates = [
         "font_bold.ttf" if bold else "font.ttf",
         "font.ttf",
@@ -54,55 +56,106 @@ def get_font(size, bold=True):
     except Exception:
         return ImageFont.load_default()
 
-def get_article_main_image(article_url):
-    """
-    Витягує виключно офіційне головне зображення статті через OpenGraph.
-    Уникає мініатюр з сайдбару та інших матеріалів.
-    """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': 'https://denzadnem.com.ua/'
-    }
+# ==================== ПАРСИНГ НОВИН ТА СТАТЕЙ ====================
+def fetch_rss_feed():
+    """Завантажує актуальну стрічку новин сайту."""
+    url = 'https://denzadnem.com.ua/feed/gn'
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
-        res = requests.get(article_url, headers=headers, timeout=6)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            # 1. Головне OpenGraph фото статті
-            og_img = soup.find('meta', property='og:image')
-            if og_img and og_img.get('content'):
-                return og_img['content']
-            # 2. Twitter card фото
-            tw_img = soup.find('meta', attrs={'name': 'twitter:image'})
-            if tw_img and tw_img.get('content'):
-                return tw_img['content']
-            # 3. Фото безпосередньо з контенту публікації
-            entry = soup.find('div', class_=re.compile(r'(entry-content|post-content)'))
-            if entry:
-                img_tag = entry.find('img')
-                if img_tag and img_tag.get('src'):
-                    return img_tag['src']
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            xml_data = resp.read()
+        root = ET.fromstring(xml_data)
+        items = root.find('channel').findall('item')
+        feed_data = []
+        for item in items[:15]:
+            title = item.find('title').text if item.find('title') is not None else ''
+            link = item.find('link').text if item.find('link') is not None else ''
+            desc = item.find('description').text if item.find('description') is not None else ''
+            content_el = item.find('{http://purl.org/rss/1.0/modules/content/}encoded')
+            content_raw = content_el.text if content_el is not None else ''
+            feed_data.append({
+                'title': title.strip(),
+                'link': link.strip(),
+                'desc': desc.strip(),
+                'content_raw': content_raw
+            })
+        return feed_data
     except Exception as e:
-        print(f"Помилка отримання фото: {e}")
-    return None
+        print(f"Помилка завантаження RSS: {e}")
+        try:
+            f = feedparser.parse("https://denzadnem.com.ua/feed/gn")
+            feed_data = []
+            for e in f.entries[:15]:
+                feed_data.append({
+                    'title': e.title.strip(),
+                    'link': e.link.strip(),
+                    'desc': e.get('summary', '').strip(),
+                    'content_raw': e.content[0].value if 'content' in e else ''
+                })
+            return feed_data
+        except Exception:
+            return []
 
-def download_image(url, save_path="temp_news_img.jpg"):
-    """Завантажує зображення з правильними заголовками проти блокувань."""
+def get_article_details(article_url, fallback_content=''):
+    """
+    Завантажує безпосередньо сторінку новини:
+    - Витягує 100% правильне офіційне фото статті (OpenGraph);
+    - Витягує повний чистий текст саме цієї статті з блоку div.entry.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://denzadnem.com.ua/'
+    }
+    img_url = None
+    article_text = ""
+    try:
+        req = urllib.request.Request(article_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as r:
+            html = r.read().decode('utf-8', errors='ignore')
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # 1. Головне OG фото статті
+        og = soup.find('meta', property='og:image')
+        if og and og.get('content'):
+            img_url = og['content']
+            
+        # 2. Повний текст статті
+        entry = soup.find('div', class_='entry')
+        if entry:
+            for s in entry(['script', 'style', 'iframe', 'noscript']):
+                s.decompose()
+            for share in entry.find_all('div', class_=re.compile(r'addtoany')):
+                share.decompose()
+            article_text = re.sub(r'\s+', ' ', entry.get_text()).strip()
+    except Exception as e:
+        print(f"Помилка завантаження сторінки статті: {e}")
+        
+    if not article_text and fallback_content:
+        soup_fb = BeautifulSoup(fallback_content, 'html.parser')
+        article_text = re.sub(r'\s+', ' ', soup_fb.get_text()).strip()
+        
+    return img_url, article_text
+
+def download_image(url, save_path):
+    """Завантажує фото з захистом від блокувань."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Referer': 'https://denzadnem.com.ua/'
     }
     try:
-        res = requests.get(url, headers=headers, timeout=8)
-        if res.status_code == 200:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as r:
             with open(save_path, "wb") as f:
-                f.write(res.content)
-            return save_path
+                f.write(r.read())
+        return save_path
     except Exception as e:
         print(f"Помилка завантаження фото: {e}")
-    return None
+        return None
 
+# ==================== ВІЗУАЛЬНИЙ ДИЗАЙН НОВИН ====================
 def create_news_background():
-    """Створює сучасний новинний фон із фірмовою шапкою «День за днем»."""
+    """Створює сучасний графітовий фон із фірмовою шапкою видання."""
     canvas = Image.new("RGBA", (WIDTH, HEIGHT), (18, 20, 26, 255))
     draw = ImageDraw.Draw(canvas)
     
@@ -111,7 +164,7 @@ def create_news_background():
         for y in range(30, HEIGHT, 40):
             draw.ellipse([x-1, y-1, x+1, y+1], fill=(255, 255, 255, 8))
             
-    # М'яке віньєтування зверху і знизу
+    # Віньєтування
     vignette = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     v_draw = ImageDraw.Draw(vignette)
     for y in range(180):
@@ -120,7 +173,7 @@ def create_news_background():
         v_draw.line([(0, HEIGHT - y), (WIDTH, HEIGHT - y)], fill=(10, 12, 16, a))
     canvas = Image.alpha_composite(canvas, vignette)
     
-    # Верхня шапка видання
+    # Шапка сайту
     h_box = Image.new("RGBA", (WIDTH, 140), (0, 0, 0, 0))
     h_draw = ImageDraw.Draw(h_box)
     
@@ -128,14 +181,10 @@ def create_news_background():
     font_logo = get_font(38, bold=True)
     font_small = get_font(26, bold=False)
     
-    # Контейнер шапки
     h_draw.rectangle([50, 40, WIDTH - 50, 115], fill=(26, 30, 40), outline=(255, 255, 255, 30), width=1)
-    # Червоний бейдж НОВИНИ
     h_draw.rectangle([50, 40, 250, 115], fill=(225, 40, 40))
     h_draw.text((150, 77), "НОВИНИ", font=font_category, fill=(255, 255, 255), anchor="mm")
-    # Назва видання
     h_draw.text((280, 77), "ДЕНЬ ЗА ДНЕМ", font=font_logo, fill=(255, 255, 255), anchor="lm")
-    # Веб-сайт
     h_draw.text((WIDTH - 80, 77), "denzadnem.com.ua", font=font_small, fill=(160, 175, 195), anchor="rm")
     
     canvas.paste(h_box, (0, 0), h_box)
@@ -144,11 +193,10 @@ def create_news_background():
     f_draw = ImageDraw.Draw(canvas)
     f_draw.line([(60, 1780), (WIDTH - 60, 1780)], fill=(60, 65, 80), width=1)
     f_draw.text((WIDTH // 2, 1825), "Більше новин на сайті denzadnem.com.ua", font=font_small, fill=(180, 190, 205), anchor="mm")
-    
     return canvas
 
 def create_clean_photo_frame(img_path):
-    """Формує акуратну фото-рамку з м'якою тінню (без детективних написів)."""
+    """Створює елегантну білу рамку для фото з м'якою тінню."""
     try:
         src = Image.open(img_path).convert("RGBA")
     except Exception:
@@ -165,7 +213,6 @@ def create_clean_photo_frame(img_path):
     border = 14
     fw = target_w + border * 2
     fh = target_h + border * 2
-    
     frame = Image.new("RGBA", (fw, fh), (255, 255, 255, 255))
     frame.paste(src, (border, border))
     
@@ -179,7 +226,7 @@ def create_clean_photo_frame(img_path):
     return shadow
 
 def pre_render_news_sticker(text, font, bg_color, text_color, pad_x=26, pad_y=12):
-    """Створює контрастну новинну плашку для рядка тексту."""
+    """Формує контрастну новинну плашку для окремого рядка тексту."""
     bbox = font.getbbox(text)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
@@ -194,15 +241,16 @@ def pre_render_news_sticker(text, font, bg_color, text_color, pad_x=26, pad_y=12
     draw.text((2 + pad_x - bbox[0], 2 + pad_y - bbox[1]), text, font=font, fill=text_color)
     return sticker
 
-def create_vertical_video(image_path, phrases, output_path="ready_for_reels.mp4"):
+# ==================== ГЕНЕРАЦІЯ 15-СЕКУНДНОГО ВІДЕО ====================
+def create_vertical_video(image_path, phrases, output_path):
     """
-    Рендерить динамічне 9-секундне відео:
-    - 1 зафіксоване головне фото статті;
-    - Адаптивний шрифт без обрізання слів;
-    - Почергова динамічна поява плашок (кожні 0.35 с);
-    - Червоний прогрес-бар.
+    Рендерить відео на 15 секунд:
+    - 3 фрази по 5.0 секунд кожна — спокійне читання без поспіху;
+    - 1 зафіксоване головне фото статті (не перемикається);
+    - Рядки з'являються за 0.22 с і залишаються на екрані майже 4 секунди;
+    - Плавний верхній прогрес-бар.
     """
-    video_duration = 9.0
+    video_duration = 15.0
     fps = 20
     
     bg_canvas = create_news_background()
@@ -218,32 +266,26 @@ def create_vertical_video(image_path, phrases, output_path="ready_for_reels.mp4"
     ]
     
     num_phrases = len(phrases)
-    time_per_phrase = video_duration / max(1, num_phrases)
+    time_per_phrase = video_duration / max(1, num_phrases)  # 5.0 с на фразу
     
     phrase_data = []
     for p_text in phrases:
         clean = p_text.replace('*', '').replace('_', '').replace('"', '').strip()
-        lines = textwrap.wrap(clean, width=24) # Без відкидання рядків
+        lines = textwrap.wrap(clean, width=25)
         if not lines:
             lines = [clean]
             
         n = len(lines)
         if n <= 2:
-            f_size = 52
-            spacing = 115
-            y_start = 1260
+            f_size, spacing, y_start = 52, 115, 1260
         elif n == 3:
-            f_size = 48
-            spacing = 105
-            y_start = 1220
+            f_size, spacing, y_start = 48, 105, 1220
         elif n == 4:
-            f_size = 42
-            spacing = 92
-            y_start = 1180
+            f_size, spacing, y_start = 42, 92, 1180
+        elif n == 5:
+            f_size, spacing, y_start = 38, 84, 1160
         else:
-            f_size = 36
-            spacing = 80
-            y_start = 1140
+            f_size, spacing, y_start = 34, 76, 1140
             
         font_dyn = get_font(f_size, bold=True)
         
@@ -265,21 +307,18 @@ def create_vertical_video(image_path, phrases, output_path="ready_for_reels.mp4"
         p_info = phrase_data[p_idx]
         t_in_phrase = t - (p_idx * time_per_phrase)
         
-        # Почергова швидка поява рядків
         y_pos = p_info["y_start"]
         for l_idx, stk in enumerate(p_info["lines"]):
-            t_appear = l_idx * 0.35
+            t_appear = l_idx * 0.22
             if t_in_phrase >= t_appear:
                 sx = int(WIDTH // 2 - stk.width / 2)
                 frame.paste(stk, (sx, y_pos), stk)
             y_pos += p_info["spacing"]
             
-        # Червоний прогрес-бар угорі
         progress_w = int((t / video_duration) * WIDTH)
         p_draw = ImageDraw.Draw(frame)
         p_draw.rectangle([0, 0, WIDTH, 10], fill=(30, 34, 44))
         p_draw.rectangle([0, 0, progress_w, 10], fill=(225, 40, 40))
-        
         return np.array(frame.convert("RGB"))
         
     clip = VideoClip(make_frame, duration=video_duration).with_fps(fps)
@@ -296,68 +335,85 @@ def create_vertical_video(image_path, phrases, output_path="ready_for_reels.mp4"
 
 # ==================== СЕКЦІЯ ВИБОРУ НОВИНИ ====================
 st.markdown("### 📰 Вибір новини")
-feed = feedparser.parse("https://denzadnem.com.ua/feed/gn")
 
-if not feed.entries:
-    st.error("Не вдалося завантажити новини. Перевірте з'єднання з сайтом.")
-    selected_news = None
-else:
-    recent_news = feed.entries[:15]
-    news_options = {entry.title: entry for entry in recent_news}
-    selected_title = st.selectbox("Оберіть новину для створення відео:", list(news_options.keys()))
-    selected_news = news_options[selected_title]
+if 'feed_items' not in st.session_state:
+    st.session_state.feed_items = fetch_rss_feed()
+
+col_sel, col_ref = st.columns([5, 1])
+with col_ref:
+    if st.button("🔄 Оновити стрічку"):
+        st.session_state.feed_items = fetch_rss_feed()
+        st.rerun()
+
+items = st.session_state.feed_items
+if not items:
+    st.error("Не вдалося завантажити стрічку новин. Перевірте з'єднання.")
+    st.stop()
+
+item_titles = [it['title'] for it in items]
+selected_index = st.selectbox(
+    "Оберіть новину для створення відео:",
+    range(len(item_titles)),
+    format_func=lambda i: item_titles[i]
+)
+selected_news = items[selected_index]
 
 # ==================== КНОПКА ЗАПУСКУ ====================
-if st.button("🚀 Згенерувати відео"):
+if st.button("🚀 Згенерувати відео (15 секунд)"):
     if not api_key:
-        st.warning("⚠️ Будь ласка, введіть API ключ Gemini.")
-    elif not selected_news:
-        st.error("Будь ласка, оберіть новину зі списку.")
+        st.warning("⚠️ Будь ласка, введіть API ключ Gemini у верхнє поле.")
     else:
         try:
             client = genai.Client(api_key=api_key)
             
-            with st.status("Генерація відео...", expanded=True) as status:
-                st.write("🔍 Аналізуємо обрану новину...")
-                latest_news = selected_news
-                clean_text = re.sub('<[^<]+>', '', latest_news.summary).strip()
+            with st.status("Генерація відео (15 секунд)...", expanded=True) as status:
+                st.write(f"🔍 Завантажуємо повний матеріал: **{selected_news['title']}**...")
                 
-                # Завантаження виключно офіційного фото статті
-                st.write("🖼️ Завантажуємо оригінальне фото статті...")
-                article_url = latest_news.link
-                img_url = get_article_main_image(article_url)
+                # 1. Завантаження повного тексту та фото саме цієї статті
+                img_url, full_text = get_article_details(
+                    selected_news['link'], 
+                    selected_news.get('content_raw', '')
+                )
                 
-                img_path = None
+                # 2. Унікальне ім'я для фото (проти кешування)
+                ts = int(time.time() * 1000)
+                temp_img_path = f"temp_img_{ts}.jpg"
+                
                 if img_url:
-                    img_path = download_image(img_url, "temp_article_main.jpg")
+                    img_path = download_image(img_url, temp_img_path)
+                else:
+                    img_path = None
                     
                 if not img_path or not os.path.exists(img_path):
                     dummy = Image.new("RGB", (940, 600), (35, 42, 54))
-                    dummy.save("temp_article_main.jpg")
-                    img_path = "temp_article_main.jpg"
+                    dummy.save(temp_img_path)
+                    img_path = temp_img_path
                     
-                st.write("✍️ Складаємо чіткий новинний сценарій...")
-                prompt_script = f"""Ти — професійний редактор сайту "День за днем" для TikTok/Reels.
-Напиши сценарій для швидкого динамічного відео (8-10 секунд) за цією новиною.
+                # 3. Складання сценарію суто за фактами цієї статті
+                st.write("✍️ Складаємо лаконічний новинний сценарій...")
+                prompt_script = f"""Ти — професійний редактор новинного сайту "День за днем" для TikTok/Reels.
+Напиши сценарій для динамічного 15-секундного відео суворо за фактами цієї статті.
 
-Заголовок: {latest_news.title}
-Текст: {clean_text[:1000]}
+Заголовок новини: {selected_news['title']}
+Повний текст новини:
+{full_text[:1800]}
 
 ВИМОГИ ДО СЦЕНАРІЮ:
-1. Рівно 3 короткі змістовні фрази, кожна з нового рядка.
-2. Це СЕРЙОЗНІ НОВИНИ (не детектив, без слів "ексклюзив", "розслідування", "доказ", без жартів).
-3. Рядок 1: Головний факт події (що сталося).
-4. Рядок 2: Важлива ключова деталь події.
-5. Рядок 3: "Подробиці читайте на сайті День за днем"
-6. Кожен рядок до 5-8 слів, суто факти, без лапок, зірочок, нумерації та емодзі."""
+1. Рівно 3 короткі змістовні фрази, кожна з нового рядка:
+   - Фраза 1: Головний факт події (стисло, зрозуміло, 5-8 слів).
+   - Фраза 2: Ключова деталь чи результат саме з цієї статті (5-8 слів).
+   - Фраза 3: Деталі читайте на сайті День за днем
+2. Текст має бути СУВОРО ПРО ЦЮ КОНКРЕТНУ НОВИНУ! Без вигадок і без сторонніх тем!
+3. Жодних позначок "Фраза 1", "Хук", без лапок, без зірочок (*), без емодзі. Лише 3 рядки чистого українського тексту."""
 
-                # Безпечний виклик моделей з пріоритетом актуальної gemini-3.8-flash
+                # Безпечний виклик моделей
                 script_text = ""
                 available_models = [
                     "gemini-3.8-flash",
                     "gemini-3-flash",
                     "gemini-2.5-flash",
-                    "gemini-2.0-flash"
+                    "gemini-2.0-flash",
+                    "gemini-1.5-flash"
                 ]
                 last_err = None
                 
@@ -374,45 +430,73 @@ if st.button("🚀 Згенерувати відео"):
                         last_err = e
                         continue
                         
-                # Якщо ШІ тимчасово недоступний або лімітований, створюємо фрази з самої статті
+                # 4. Якщо ШІ недоступний — точний розумний алгоритм з тексту статті
                 if not script_text:
-                    st.info("ℹ️ Формуємо текст субтитрів безпосередньо з обраної новини...")
-                    p1 = re.sub(r'[\r\n]+', ' ', latest_news.title).strip()
-                    sentences = [s.strip() for s in re.split(r'[.!?]+', clean_text) if len(s.strip()) > 15 and len(s.strip()) < 90]
-                    p2 = sentences[0] if sentences else "Подробиці події на Хмельниччині з'ясовують правоохоронці"
+                    st.info("ℹ️ Формуємо точні субтитри безпосередньо з тексту обраної статті...")
+                    t_clean = re.sub(r'[\r\n]+', ' ', selected_news['title']).strip()
+                    t_clean = re.sub(r'\s*\((?:фото|відео|оновлено|ексклюзив)\)', '', t_clean, flags=re.IGNORECASE).strip()
+                    if len(t_clean) > 75 and (',' in t_clean or ':' in t_clean):
+                        t_clean = re.split(r'[,:]', t_clean)[0].strip()
+                        
+                    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if len(s.strip()) > 25]
+                    p2 = ""
+                    for s in sentences:
+                        s_clean = re.sub(r'\s+', ' ', s).strip()
+                        if 25 < len(s_clean) < 110:
+                            p2 = s_clean
+                            break
+                    if not p2 and sentences:
+                        words = sentences[0].split()[:10]
+                        p2 = ' '.join(words) + '...'
+                    if not p2:
+                        p2 = "Більше деталей події у матеріалі"
+                        
                     p3 = "Подробиці читайте на сайті День за днем"
-                    phrases = [p1, p2, p3]
+                    phrases = [t_clean, p2, p3]
                 else:
                     phrases = [p.strip() for p in script_text.split('\n') if len(p.strip()) > 3]
                     if len(phrases) < 2:
-                        phrases = [latest_news.title, "Подробиці читайте на сайті День за днем"]
-                    
-                st.write("🎬 Рендеримо відео...")
-                video_file = create_vertical_video(img_path, phrases, "ready_for_reels.mp4")
+                        phrases = [selected_news['title'], "Подробиці читайте на сайті День за днем"]
+                        
+                # 5. Рендеримо відео з унікальним іменем
+                st.write("🎬 Рендеримо відео на 15 секунд...")
+                temp_video_path = f"reels_{ts}.mp4"
+                video_file = create_vertical_video(img_path, phrases, temp_video_path)
                 
                 status.update(label="✅ Відео готове до публікації!", state="complete", expanded=False)
 
-            # Результати
+            # Читаємо відео в байти для уникнення кешу браузера
+            with open(video_file, "rb") as vf:
+                video_bytes = vf.read()
+
+            # Відображення результатів
             col1, col2 = st.columns([1, 1])
-            
             with col1:
-                st.markdown("### 📱 Попередній перегляд (9:16)")
-                st.video(video_file)
-                with open(video_file, "rb") as f:
-                    st.download_button(
-                        label="⬇️ Завантажити відео (MP4)",
-                        data=f,
-                        file_name="reels_denzadnem.mp4",
-                        mime="video/mp4"
-                    )
-                    
+                st.markdown("### 📱 Попередній перегляд (9:16, 15 сек)")
+                st.video(video_bytes)
+                st.download_button(
+                    label="⬇️ Завантажити відео (MP4)",
+                    data=video_bytes,
+                    file_name=f"reels_{selected_index+1}.mp4",
+                    mime="video/mp4"
+                )
+                
             with col2:
-                st.markdown("### 📝 Текст на відео")
-                st.text_area("Фрази (субтитри):", value="\n\n".join(phrases), height=140)
+                st.markdown("### 📝 Текст на відео (субтитри)")
+                st.text_area("Фрази відео:", value="\n\n".join(phrases), height=140)
                 
                 st.markdown("### 📢 Опис для соцмереж")
-                caption = f"{latest_news.title}\n\nПодробиці читайте на сайті «День за днем» за посиланням у профілі!\n\n#новини #деньзаднем #хмельниччина #шепетівка #україна"
+                caption = f"{selected_news['title']}\n\nПодробиці читайте на сайті «День за днем» за посиланням у профілі!\n\n#новини #деньзаднем #хмельниччина #шепетівка #україна"
                 st.text_area("Скопіюйте опис для публікації:", value=caption, height=140)
+                
+            # Очищення тимчасових файлів
+            try:
+                if os.path.exists(temp_img_path):
+                    os.remove(temp_img_path)
+                if os.path.exists(temp_video_path):
+                    os.remove(temp_video_path)
+            except Exception:
+                pass
                 
         except Exception as e:
             st.error(f"Виникла помилка: {e}")
