@@ -532,3 +532,49 @@ if st.button("🚀 Згенерувати відео (15 секунд)"):
 🔗 Детальніше про цю новину та фотографії читайте за посиланням у шапці нашого профілю!
 
 #новини #деньзаднем #хмельниччина #шепетівка #події #україна #актуально"""
+
+                # 4. Рендеримо відео на 15 секунд
+                st.write(f"🎬 Рендеримо 15-секундне відео (використано картинок: {len(valid_img_paths)})...")
+                temp_video_path = f"reels_{ts}.mp4"
+                video_file = create_vertical_video(valid_img_paths, phrases, temp_video_path)
+                
+                status.update(label="✅ Відео та опис готові до публікації!", state="complete", expanded=False)
+
+            # Читаємо відео в байти для уникнення кешу браузера
+            with open(video_file, "rb") as vf:
+                video_bytes = vf.read()
+
+            # Відображення результатів
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                st.markdown("### 📱 Попередній перегляд (9:16, 15 сек)")
+                st.video(video_bytes)
+                st.download_button(
+                    label="⬇️ Завантажити відео (MP4)",
+                    data=video_bytes,
+                    file_name=f"reels_{selected_index+1}.mp4",
+                    mime="video/mp4"
+                )
+                
+            with col2:
+                st.markdown("### 📝 Текст на відео (3 речення)")
+                st.text_area("Субтитри на екрані:", value="\n\n".join(phrases), height=140)
+                
+                st.markdown("### 📢 Розгорнутий опис для соцмереж")
+                st.text_area("Опис для публікації (скопіюйте):", value=caption_text, height=260)
+                
+            # Очищення тимчасових файлів
+            for p in valid_img_paths:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+            try:
+                if os.path.exists(temp_video_path):
+                    os.remove(temp_video_path)
+            except Exception:
+                pass
+                
+        except Exception as e:
+            st.error(f"Виникла помилка: {e}")
