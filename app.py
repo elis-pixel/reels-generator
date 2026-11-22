@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 st.title("🤖 Новинний Reels Генератор — «ДЕНЬ ЗА ДНЕМ»")
-st.caption("Генерація професійних 15-секундних відео для TikTok та Instagram Reels")
+st.caption("Автоматичне створення стильних 15-секундних відео для TikTok та Instagram Reels")
 
 # Введення API ключа
 api_key = st.text_input("Введіть ключ Gemini API (починається з AIza...):", type="password")
@@ -30,7 +30,7 @@ HEIGHT = 1920
 
 # ==================== ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ ШРИФТІВ ====================
 def get_font(size, bold=True):
-    """Підбирає доступний якісний шрифт на сервері (Windows / Linux / Streamlit Cloud)."""
+    """Підбирає якісний доступний шрифт на сервері (Windows / Linux / Streamlit Cloud)."""
     candidates = [
         "font_bold.ttf" if bold else "font.ttf",
         "font.ttf",
@@ -99,15 +99,15 @@ def fetch_rss_feed():
 
 def get_article_details(article_url, fallback_content=''):
     """
-    Завантажує безпосередньо сторінку новини:
-    - Витягує 100% правильне офіційне фото статті (OpenGraph);
-    - Витягує повний чистий текст саме цієї статті з блоку div.entry.
+    Завантажує сторінку новини:
+    - Знаходить ВСІ реальні ілюстрації цієї статті (og:image + картинки з div.entry);
+    - Витягує повний чистий текст саме цієї статті.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Referer': 'https://denzadnem.com.ua/'
     }
-    img_url = None
+    images = []
     article_text = ""
     try:
         req = urllib.request.Request(article_url, headers=headers)
@@ -118,24 +118,35 @@ def get_article_details(article_url, fallback_content=''):
         # 1. Головне OG фото статті
         og = soup.find('meta', property='og:image')
         if og and og.get('content'):
-            img_url = og['content']
+            images.append(og['content'])
             
-        # 2. Повний текст статті
+        # 2. Картинки безпосередньо з тіла статті div.entry
         entry = soup.find('div', class_='entry')
         if entry:
+            for img in entry.find_all('img'):
+                src = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
+                if src and src.startswith('http'):
+                    # Відфільтровуємо дрібні іконки, емодзі, аватарки
+                    if any(x in src.lower() for x in ['avatar', 'emoji', 'icon', 'logo', 'addtoany', '.svg']):
+                        continue
+                    clean_src = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', src)
+                    if clean_src not in images and src not in images:
+                        images.append(src)
+                        
+            # Очищений текст статті
             for s in entry(['script', 'style', 'iframe', 'noscript']):
                 s.decompose()
             for share in entry.find_all('div', class_=re.compile(r'addtoany')):
                 share.decompose()
             article_text = re.sub(r'\s+', ' ', entry.get_text()).strip()
     except Exception as e:
-        print(f"Помилка завантаження сторінки статті: {e}")
+        print(f"Помилка завантаження статті: {e}")
         
     if not article_text and fallback_content:
         soup_fb = BeautifulSoup(fallback_content, 'html.parser')
         article_text = re.sub(r'\s+', ' ', soup_fb.get_text()).strip()
         
-    return img_url, article_text
+    return images, article_text
 
 def download_image(url, save_path):
     """Завантажує фото з захистом від блокувань."""
@@ -153,9 +164,9 @@ def download_image(url, save_path):
         print(f"Помилка завантаження фото: {e}")
         return None
 
-# ==================== ВІЗУАЛЬНИЙ ДИЗАЙН НОВИН ====================
+# ==================== ВІЗУАЛЬНИЙ ДИЗАЙН ====================
 def create_news_background():
-    """Створює сучасний графітовий фон із фірмовою шапкою видання."""
+    """Створює сучасний графітовий фон із фірмовою шапкою «День за днем»."""
     canvas = Image.new("RGBA", (WIDTH, HEIGHT), (18, 20, 26, 255))
     draw = ImageDraw.Draw(canvas)
     
@@ -225,8 +236,8 @@ def create_clean_photo_frame(img_path):
     shadow.paste(frame, (pad, pad), frame)
     return shadow
 
-def pre_render_news_sticker(text, font, bg_color, text_color, pad_x=26, pad_y=12):
-    """Формує контрастну новинну плашку для окремого рядка тексту."""
+def pre_render_news_sticker(text, font, bg_color, text_color, pad_x=24, pad_y=12):
+    """Формує контрастну новинну плашку для рядка тексту."""
     bbox = font.getbbox(text)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
@@ -241,23 +252,39 @@ def pre_render_news_sticker(text, font, bg_color, text_color, pad_x=26, pad_y=12
     draw.text((2 + pad_x - bbox[0], 2 + pad_y - bbox[1]), text, font=font, fill=text_color)
     return sticker
 
-# ==================== ГЕНЕРАЦІЯ 15-СЕКУНДНОГО ВІДЕО ====================
-def create_vertical_video(image_path, phrases, output_path):
+# ==================== ВІДЕОГЕНЕРАТОР З ЧЕРГУВАННЯМ ФОТО ====================
+def create_vertical_video(image_paths, phrases, output_path):
     """
-    Рендерить відео на 15 секунд:
-    - 3 фрази по 5.0 секунд кожна — спокійне читання без поспіху;
-    - 1 зафіксоване головне фото статті (не перемикається);
-    - Рядки з'являються за 0.22 с і залишаються на екрані майже 4 секунди;
+    Рендерить 15-секундне відео:
+    - 3 змістовні речення (по 5.0 с на речення);
+    - Якщо фото декілька — вони по черзі змінюються разом із реченнями;
+    - Якщо фото одне — воно залишається на все відео;
+    - Адаптивний шрифт, щоб жодне слово не обрізалося;
     - Плавний верхній прогрес-бар.
     """
+    if isinstance(image_paths, str):
+        image_paths = [image_paths]
+        
     video_duration = 15.0
     fps = 20
+    num_phrases = len(phrases)
+    time_per_phrase = video_duration / max(1, num_phrases)  # ~5.0 с на речення
     
-    bg_canvas = create_news_background()
-    photo = create_clean_photo_frame(image_path)
-    px = (WIDTH - photo.width) // 2
-    bg_canvas.paste(photo, (px, 155), photo)
-    
+    # 1. Створюємо рамки для кожної доступної картинки статті
+    photo_frames = [create_clean_photo_frame(p) for p in image_paths if os.path.exists(p)]
+    if not photo_frames:
+        photo_frames = [create_clean_photo_frame(None)]
+        
+    # 2. Створюємо фон для кожної фрази з відповідним фото по черзі
+    base_bg = create_news_background()
+    phrase_bgs = []
+    for p_idx in range(num_phrases):
+        photo = photo_frames[p_idx % len(photo_frames)]
+        canvas = base_bg.copy()
+        px = (WIDTH - photo.width) // 2
+        canvas.paste(photo, (px, 155), photo)
+        phrase_bgs.append(canvas)
+        
     news_colors = [
         ((255, 215, 0), (15, 15, 15)),   # Жовта плашка
         ((255, 255, 255), (15, 15, 15)), # Біла плашка
@@ -265,13 +292,11 @@ def create_vertical_video(image_path, phrases, output_path):
         ((255, 215, 0), (15, 15, 15))
     ]
     
-    num_phrases = len(phrases)
-    time_per_phrase = video_duration / max(1, num_phrases)  # 5.0 с на фразу
-    
+    # 3. Підготовка тексту речень
     phrase_data = []
     for p_text in phrases:
         clean = p_text.replace('*', '').replace('_', '').replace('"', '').strip()
-        lines = textwrap.wrap(clean, width=25)
+        lines = textwrap.wrap(clean, width=26)
         if not lines:
             lines = [clean]
             
@@ -279,13 +304,13 @@ def create_vertical_video(image_path, phrases, output_path):
         if n <= 2:
             f_size, spacing, y_start = 52, 115, 1260
         elif n == 3:
-            f_size, spacing, y_start = 48, 105, 1220
+            f_size, spacing, y_start = 46, 100, 1220
         elif n == 4:
-            f_size, spacing, y_start = 42, 92, 1180
+            f_size, spacing, y_start = 40, 88, 1180
         elif n == 5:
-            f_size, spacing, y_start = 38, 84, 1160
+            f_size, spacing, y_start = 36, 80, 1150
         else:
-            f_size, spacing, y_start = 34, 76, 1140
+            f_size, spacing, y_start = 32, 72, 1130
             
         font_dyn = get_font(f_size, bold=True)
         
@@ -302,11 +327,13 @@ def create_vertical_video(image_path, phrases, output_path):
         })
         
     def make_frame(t):
-        frame = bg_canvas.copy()
         p_idx = min(int(t / time_per_phrase), num_phrases - 1)
+        # Фон із відповідним фото для поточної фрази
+        frame = phrase_bgs[p_idx].copy()
         p_info = phrase_data[p_idx]
         t_in_phrase = t - (p_idx * time_per_phrase)
         
+        # Швидка поява кожного рядка за 0.22 с (усі рядки готові за ~1 с, 4 с спокійного читання)
         y_pos = p_info["y_start"]
         for l_idx, stk in enumerate(p_info["lines"]):
             t_appear = l_idx * 0.22
@@ -315,6 +342,7 @@ def create_vertical_video(image_path, phrases, output_path):
                 frame.paste(stk, (sx, y_pos), stk)
             y_pos += p_info["spacing"]
             
+        # Прогрес-бар
         progress_w = int((t / video_duration) * WIDTH)
         p_draw = ImageDraw.Draw(frame)
         p_draw.rectangle([0, 0, WIDTH, 10], fill=(30, 34, 44))
@@ -367,46 +395,53 @@ if st.button("🚀 Згенерувати відео (15 секунд)"):
             client = genai.Client(api_key=api_key)
             
             with st.status("Генерація відео (15 секунд)...", expanded=True) as status:
-                st.write(f"🔍 Завантажуємо повний матеріал: **{selected_news['title']}**...")
+                st.write(f"🔍 Завантажуємо матеріал: **{selected_news['title']}**...")
                 
-                # 1. Завантаження повного тексту та фото саме цієї статті
-                img_url, full_text = get_article_details(
+                # 1. Завантаження повного тексту та ВСІХ фото саме цієї статті
+                img_urls, full_text = get_article_details(
                     selected_news['link'], 
                     selected_news.get('content_raw', '')
                 )
                 
-                # 2. Унікальне ім'я для фото (проти кешування)
                 ts = int(time.time() * 1000)
-                temp_img_path = f"temp_img_{ts}.jpg"
+                valid_img_paths = []
                 
-                if img_url:
-                    img_path = download_image(img_url, temp_img_path)
-                else:
-                    img_path = None
-                    
-                if not img_path or not os.path.exists(img_path):
+                # Завантажуємо до 3-х картинок статті
+                if img_urls:
+                    st.write(f"🖼️ Знайдено ілюстрацій до статті: {len(img_urls)}. Завантажуємо...")
+                    for idx, u in enumerate(img_urls[:3]):
+                        p = f"temp_img_{ts}_{idx}.jpg"
+                        saved = download_image(u, p)
+                        if saved and os.path.exists(saved):
+                            valid_img_paths.append(saved)
+                            
+                if not valid_img_paths:
+                    dummy_path = f"temp_img_{ts}_dummy.jpg"
                     dummy = Image.new("RGB", (940, 600), (35, 42, 54))
-                    dummy.save(temp_img_path)
-                    img_path = temp_img_path
+                    dummy.save(dummy_path)
+                    valid_img_paths.append(dummy_path)
                     
-                # 3. Складання сценарію суто за фактами цієї статті
-                st.write("✍️ Складаємо лаконічний новинний сценарій...")
+                # 2. Складання сценарію: 3 повноцінні речення
+                st.write("✍️ Складаємо змістовний новинний сценарій (3 речення)...")
                 prompt_script = f"""Ти — професійний редактор новинного сайту "День за днем" для TikTok/Reels.
-Напиши сценарій для динамічного 15-секундного відео суворо за фактами цієї статті.
+Напиши сценарій для 15-секундного відео суворо на основі цієї статті.
 
 Заголовок новини: {selected_news['title']}
 Повний текст новини:
-{full_text[:1800]}
+{full_text[:2000]}
 
 ВИМОГИ ДО СЦЕНАРІЮ:
-1. Рівно 3 короткі змістовні фрази, кожна з нового рядка:
-   - Фраза 1: Головний факт події (стисло, зрозуміло, 5-8 слів).
-   - Фраза 2: Ключова деталь чи результат саме з цієї статті (5-8 слів).
-   - Фраза 3: Деталі читайте на сайті День за днем
-2. Текст має бути СУВОРО ПРО ЦЮ КОНКРЕТНУ НОВИНУ! Без вигадок і без сторонніх тем!
-3. Жодних позначок "Фраза 1", "Хук", без лапок, без зірочок (*), без емодзі. Лише 3 рядки чистого українського тексту."""
+Напиши РІВНО 3 ПОВНОЦІННІ РЕЧЕННЯ (не скорочені фрази, а саме зв'язні змістовні речення приблизно по 9–14 слів кожне), кожне з нового рядка:
+1. Перше речення: Що саме, де і за яких обставин сталося (основна подія статті).
+2. Друге речення: Ключова важлива подробиця, деталі чи наслідки саме з цієї статті.
+3. Третє речення: Заключне речення із закликом або підсумком (наприклад: "Більше подробиць та фотографій дивіться на сайті День за днем").
 
-                # Безпечний виклик моделей
+ВАЖЛИВО:
+- Кожне речення має бути закінченою думкою, змістовним і легко читатися з екрана.
+- Текст має бути СУВОРО ПРО ЦЮ КОНКРЕТНУ НОВИНУ!
+- Жодних службових слів ("Речення 1", "Хук"), без лапок, без зірочок (*) і смайликів. Лише 3 чисті рядки тексту."""
+
+                # Безпечний виклик моделей Gemini
                 script_text = ""
                 available_models = [
                     "gemini-3.8-flash",
@@ -430,38 +465,39 @@ if st.button("🚀 Згенерувати відео (15 секунд)"):
                         last_err = e
                         continue
                         
-                # 4. Якщо ШІ недоступний — точний розумний алгоритм з тексту статті
+                # 3. Якщо ШІ недоступний — точний розумний алгоритм з 3-х повних речень
                 if not script_text:
-                    st.info("ℹ️ Формуємо точні субтитри безпосередньо з тексту обраної статті...")
+                    st.info("ℹ️ Формуємо 3 повні речення безпосередньо з тексту обраної статті...")
                     t_clean = re.sub(r'[\r\n]+', ' ', selected_news['title']).strip()
                     t_clean = re.sub(r'\s*\((?:фото|відео|оновлено|ексклюзив)\)', '', t_clean, flags=re.IGNORECASE).strip()
-                    if len(t_clean) > 75 and (',' in t_clean or ':' in t_clean):
-                        t_clean = re.split(r'[,:]', t_clean)[0].strip()
+                    if not t_clean.endswith(('.', '!', '?')):
+                        t_clean += '.'
                         
-                    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if len(s.strip()) > 25]
+                    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', full_text) if len(s.strip()) > 30]
                     p2 = ""
                     for s in sentences:
                         s_clean = re.sub(r'\s+', ' ', s).strip()
-                        if 25 < len(s_clean) < 110:
+                        if 35 < len(s_clean) < 130:
                             p2 = s_clean
                             break
                     if not p2 and sentences:
-                        words = sentences[0].split()[:10]
-                        p2 = ' '.join(words) + '...'
-                    if not p2:
-                        p2 = "Більше деталей події у матеріалі"
+                        p2 = sentences[0]
+                    if not p2.endswith(('.', '!', '?')):
+                        p2 += '.'
+                    if not p2 or len(p2) < 20:
+                        p2 = "Усі деталі та розвиток подій з’ясовуються у громаді."
                         
-                    p3 = "Подробиці читайте на сайті День за днем"
+                    p3 = "Більше подробиць та фотографій дивіться на сайті День за днем."
                     phrases = [t_clean, p2, p3]
                 else:
-                    phrases = [p.strip() for p in script_text.split('\n') if len(p.strip()) > 3]
+                    phrases = [p.strip() for p in script_text.split('\n') if len(p.strip()) > 5]
                     if len(phrases) < 2:
                         phrases = [selected_news['title'], "Подробиці читайте на сайті День за днем"]
                         
-                # 5. Рендеримо відео з унікальним іменем
-                st.write("🎬 Рендеримо відео на 15 секунд...")
+                # 4. Рендеримо відео на 15 секунд з чергуванням картинок
+                st.write(f"🎬 Рендеримо 15-секундне відео (використано картинок: {len(valid_img_paths)})...")
                 temp_video_path = f"reels_{ts}.mp4"
-                video_file = create_vertical_video(img_path, phrases, temp_video_path)
+                video_file = create_vertical_video(valid_img_paths, phrases, temp_video_path)
                 
                 status.update(label="✅ Відео готове до публікації!", state="complete", expanded=False)
 
@@ -482,17 +518,21 @@ if st.button("🚀 Згенерувати відео (15 секунд)"):
                 )
                 
             with col2:
-                st.markdown("### 📝 Текст на відео (субтитри)")
-                st.text_area("Фрази відео:", value="\n\n".join(phrases), height=140)
+                st.markdown("### 📝 Текст на відео (3 речення)")
+                st.text_area("Субтитри:", value="\n\n".join(phrases), height=140)
                 
                 st.markdown("### 📢 Опис для соцмереж")
                 caption = f"{selected_news['title']}\n\nПодробиці читайте на сайті «День за днем» за посиланням у профілі!\n\n#новини #деньзаднем #хмельниччина #шепетівка #україна"
                 st.text_area("Скопіюйте опис для публікації:", value=caption, height=140)
                 
             # Очищення тимчасових файлів
+            for p in valid_img_paths:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
             try:
-                if os.path.exists(temp_img_path):
-                    os.remove(temp_img_path)
                 if os.path.exists(temp_video_path):
                     os.remove(temp_video_path)
             except Exception:
